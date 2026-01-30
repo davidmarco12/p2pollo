@@ -27,7 +27,36 @@ function Clean {
 
 function Test {
     Write-Host "Ejecutando tests..." -ForegroundColor Green
-    go test -v .\...
+    go test -v ./...
+}
+
+function Test-Coverage {
+    Write-Host "Generando reporte de cobertura..." -ForegroundColor Green
+    go test -coverprofile=coverage.out ./...
+    if ($LASTEXITCODE -eq 0) {
+        go tool cover -html=coverage.out -o coverage.html
+        Write-Host "OK - Reporte generado en coverage.html" -ForegroundColor Green
+    }
+}
+
+function Test-Unit {
+    Write-Host "Ejecutando tests unitarios..." -ForegroundColor Green
+    go test -v ./internal/...
+}
+
+function Test-Integration {
+    Write-Host "Ejecutando tests de integración..." -ForegroundColor Green
+    go test -v ./tests/integration/...
+}
+
+function Test-Short {
+    Write-Host "Ejecutando tests rápidos..." -ForegroundColor Green
+    go test -short -v ./...
+}
+
+function Bench {
+    Write-Host "Ejecutando benchmarks..." -ForegroundColor Green
+    go test -bench=. -benchmem ./...
 }
 
 function Run {
@@ -114,21 +143,36 @@ function Help {
     Write-Host @"
 Comandos disponibles:
 
+Build:
   .\build.ps1 build           Compila el binario
   .\build.ps1 clean           Limpia archivos generados
-  .\build.ps1 test            Ejecuta tests
-  .\build.ps1 run             Ejecuta directamente sin compilar
   .\build.ps1 dev             Compila y ejecuta
+  .\build.ps1 run             Ejecuta directamente sin compilar
+
+Testing:
+  .\build.ps1 test            Ejecuta todos los tests
+  .\build.ps1 test-unit       Ejecuta solo tests unitarios
+  .\build.ps1 test-integration Ejecuta tests de integración
+  .\build.ps1 test-short      Ejecuta tests rápidos (skip lentos)
+  .\build.ps1 test-coverage   Genera reporte de cobertura
+  .\build.ps1 bench           Ejecuta benchmarks
+
+Code Quality:
   .\build.ps1 fmt             Formatea el código
+  .\build.ps1 verify          Verifica módulos
+
+Dependencies:
   .\build.ps1 deps            Descarga dependencias
   .\build.ps1 install-deps    Instala todas las dependencias
   .\build.ps1 list-deps       Lista dependencias instaladas
-  .\build.ps1 verify          Verifica módulos
+
+Help:
   .\build.ps1 help            Muestra esta ayuda
 
 Ejemplos:
   .\build.ps1 install-deps    # Primera vez
   .\build.ps1 build           # Compilar
+  .\build.ps1 test            # Verificar tests
   .\build.ps1 dev             # Desarrollar
 
 "@
@@ -136,17 +180,22 @@ Ejemplos:
 
 # Ejecutar comando
 switch ($Command.ToLower()) {
-    "build"        { Build }
-    "clean"        { Clean }
-    "test"         { Test }
-    "run"          { Run }
-    "dev"          { Dev }
-    "fmt"          { Format }
-    "format"       { Format }
-    "deps"         { Deps }
-    "install-deps" { Install-Deps }
-    "list-deps"    { List-Deps }
-    "verify"       { Verify }
-    "help"         { Help }
-    default        { Help }
+    "build"            { Build }
+    "clean"            { Clean }
+    "test"             { Test }
+    "test-unit"        { Test-Unit }
+    "test-integration" { Test-Integration }
+    "test-short"       { Test-Short }
+    "test-coverage"    { Test-Coverage }
+    "bench"            { Bench }
+    "run"              { Run }
+    "dev"              { Dev }
+    "fmt"              { Format }
+    "format"           { Format }
+    "deps"             { Deps }
+    "install-deps"     { Install-Deps }
+    "list-deps"        { List-Deps }
+    "verify"           { Verify }
+    "help"             { Help }
+    default            { Help }
 }
