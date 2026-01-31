@@ -150,36 +150,26 @@ func runPlay(cmd *cobra.Command, args []string) {
 		return
 	}
 
+	// Crear reader para el archivo específico usando anacrolix
+	var fileReader io.ReadSeeker
+	if len(info.Files) == 1 {
+		fileReader = t.NewReader()
+	} else {
+		fileReader, err = t.NewFileReader(playFileIndex)
+		if err != nil {
+			color.Red("❌ Error creando reader: %v", err)
+			tmpFileHandle.Close()
+			return
+		}
+	}
+
 	// Goroutine para copiar datos del torrent al temporal
 	stopCopy := make(chan bool)
 
 	go func() {
-		fmt.Println("[DEBUG] Iniciando goroutine de copia")
+		fmt.Println("[DEBUG] Iniciando goroutine de copia desde anacrolix reader")
 
-		// Encontrar el archivo .part descargado por anacrolix
-		cacheDir := filepath.Join(os.Getenv("USERPROFILE"), ".cache", "p2pollo", info.Name)
-
-		// Obtener la ruta del archivo que queremos
-		targetFile := filepath.Join(cacheDir, info.Files[playFileIndex].Path)
-		// Anacrolix añade ".part" a los archivos que está descargando
-		partFile := targetFile + ".part"
-
-		fmt.Printf("[DEBUG] Intentando leer desde: %s\n", partFile)
-
-		srcFile, err := os.Open(partFile)
-		if err != nil {
-			fmt.Printf("[DEBUG] ❌ Error abriendo parte file: %v\n", err)
-			// Fallback: intentar leer desde el archivo completo
-			srcFile, err = os.Open(targetFile)
-			if err != nil {
-				fmt.Printf("[DEBUG] ❌ Error abriendo archivo: %v\n", err)
-				tmpFileHandle.Close()
-				return
-			}
-		}
-		defer srcFile.Close()
-
-		fmt.Println("[DEBUG] ✓ Archivo fuente abierto, iniciando copia")
+		fmt.Println("[DEBUG] ✓ Archivo fuente disponible, iniciando copia")
 		buf := make([]byte, 64*1024)
 		bytesWritten := int64(0)
 		readCounter := 0
@@ -191,7 +181,7 @@ func runPlay(cmd *cobra.Command, args []string) {
 				tmpFileHandle.Close()
 				return
 			default:
-				n, err := srcFile.Read(buf)
+				n, err := fileReader.Read(buf)
 				if n > 0 {
 					readCounter++
 					m, writeErr := tmpFileHandle.Write(buf[:n])
@@ -218,20 +208,34 @@ func runPlay(cmd *cobra.Command, args []string) {
 		}
 	}()
 
-	// Esperar a que TODO el archivo esté completamente descargado
-	fmt.Println("⏳ Esperando descarga completa del archivo...")
+	// Esperar a que haya un buffer mínimo, luego lanzar reproducción
+	fmt.Println("⏳ Esperando buffer inicial para reproducción...")
 	downloadTimeout := time.After(10 * time.Minute)
-	ticker := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
-	downloadComplete := false
 	targetSize := info.Files[playFileIndex].Length
-	for !downloadComplete {
+
+	// Determinar estrategia según tamaño del archivo
+	var minBufferToPlay int64
+	if targetSize < 300*1024*1024 { // Archivos < 300MB: esperar descarga completa
+		minBufferToPlay = targetSize
+		fmt.Println("📹 Archivo pequeño - esperando descarga completa...")
+	} else { // Archivos >= 300MB: usar buffer de 200MB
+		minBufferToPlay = 200 * 1024 * 1024
+		fmt.Println("📽️  Archivo grande - reproduciendo con buffer de 200MB...")
+	}
+
+	bufferReady := false
+	downloadComplete := false
+
+	// Monitorear buffer para lanzar MPV cuando esté listo
+	for !bufferReady && !downloadComplete {
 		select {
 		case <-downloadTimeout:
 			fmt.Println()
 			close(stopCopy)
-			color.Red("❌ Timeout esperando descarga")
+			color.Red("❌ Timeout esperando buffer")
 			os.Remove(tmpPath)
 			return
 		case <-ticker.C:
@@ -242,14 +246,19 @@ func runPlay(cmd *cobra.Command, args []string) {
 				if progress > 100 {
 					progress = 100
 				}
-				fmt.Printf("\r⏳ Descarga: %.1f/%.1f MB (%d%%)",
+				fmt.Printf("\r⏳ Buffer: %.1f/%.1f MB (%d%%) [necesarios %.0f MB]",
 					float64(currentSize)/(1024*1024),
 					float64(targetSize)/(1024*1024),
-					progress)
+					progress,
+					float64(minBufferToPlay)/(1024*1024))
+
+				if currentSize >= minBufferToPlay {
+					fmt.Println()
+					fmt.Printf("✓ Buffer listo (%.1f MB) - Iniciando reproducción\n\n", float64(currentSize)/(1024*1024))
+					bufferReady = true
+				}
 
 				if currentSize >= targetSize {
-					fmt.Println()
-					fmt.Printf("✓ Descarga completa: %.1f MB\n\n", float64(currentSize)/(1024*1024))
 					downloadComplete = true
 				}
 			}
@@ -284,19 +293,25 @@ func runPlay(cmd *cobra.Command, args []string) {
 
 	color.Green("✓ Reproduciendo (streaming mientras descarga)\n")
 
-	// Monitorear
+	// Monitorear progreso de descarga mientras se reproduce
 	done := make(chan bool)
 	go func() {
-		ticker := time.NewTicker(3 * time.Second)
+		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-done:
 				return
 			case <-ticker.C:
-				color.Cyan("  📊 %.1f%% | %.1f MB | %d peers",
-					t.Progress(),
-					float64(t.BytesCompleted())/(1024*1024),
+				bytesCompleted := t.BytesCompleted()
+				progress := int((float64(bytesCompleted) / float64(targetSize)) * 100)
+				if progress > 100 {
+					progress = 100
+				}
+
+				color.Cyan("  📊 %d%% | %.1f MB | %d peers",
+					progress,
+					float64(bytesCompleted)/(1024*1024),
 					t.Peers())
 			}
 		}

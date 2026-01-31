@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -11,6 +13,8 @@ import (
 var (
 	cfgFile string
 	verbose bool
+	profile bool
+	pprof   string
 )
 
 // rootCmd representa el comando base
@@ -37,12 +41,34 @@ func Execute() {
 	}
 }
 
+// startProfiling inicia el servidor de pprof si está habilitado
+func startProfiling() {
+	if profile {
+		go func() {
+			fmt.Fprintf(os.Stderr, "\n🔍 PROFILING ENABLED\n")
+			fmt.Fprintf(os.Stderr, "   Servidor en http://localhost:%s/debug/pprof/\n\n", pprof)
+			fmt.Fprintf(os.Stderr, "   Comandos:\n")
+			fmt.Fprintf(os.Stderr, "   Heap:      go tool pprof http://localhost:%s/debug/pprof/heap\n", pprof)
+			fmt.Fprintf(os.Stderr, "   CPU (10s): go tool pprof http://localhost:%s/debug/pprof/profile?seconds=10\n", pprof)
+			fmt.Fprintf(os.Stderr, "   Goroutine: go tool pprof http://localhost:%s/debug/pprof/goroutine\n", pprof)
+			fmt.Fprintf(os.Stderr, "   Mutex:     go tool pprof http://localhost:%s/debug/pprof/mutex\n\n", pprof)
+
+			if err := http.ListenAndServe("localhost:"+pprof, nil); err != nil {
+				fmt.Fprintf(os.Stderr, "❌ Profiling error: %v\n", err)
+			}
+		}()
+	}
+}
+
 func init() {
 	cobra.OnInitialize(initConfig)
+	cobra.OnInitialize(startProfiling)
 
 	// Flags globales
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "archivo de configuración (default: $HOME/.config/p2pollo/config.yaml)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "output detallado")
+	rootCmd.PersistentFlags().BoolVar(&profile, "profile", false, "habilitar profiling pprof")
+	rootCmd.PersistentFlags().StringVar(&pprof, "pprof-port", "6060", "puerto para servidor pprof")
 }
 
 // initConfig lee el archivo de configuración

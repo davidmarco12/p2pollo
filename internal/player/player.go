@@ -407,7 +407,7 @@ func (m *MPV) monitorOutput() {
 	}
 }
 
-// parseOutput parsea la salida de mpv
+// parseOutput parsea la salida de mp  v
 func (m *MPV) parseOutput(line string) {
 	m.log.Debugf("mpv output: %s", line)
 

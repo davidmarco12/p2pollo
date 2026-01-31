@@ -226,3 +226,45 @@ func TestExample(t *testing.T) {
 	cfg := config.DefaultConfig()
 	assert.NotEmpty(t, cfg.Player.MPVPath)
 }
+
+// ============ BENCHMARKS ============
+
+// BenchmarkPlayerCreation mide cuánto tarda crear un player
+func BenchmarkPlayerCreation(b *testing.B) {
+	cfg := config.DefaultConfig()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		player, err := New(cfg)
+		if err != nil {
+			b.Skip("mpv no disponible")
+		}
+		player.Close()
+	}
+}
+
+// BenchmarkPlayerState mide cuánto tarda obtener el estado
+func BenchmarkPlayerState(b *testing.B) {
+	cfg := config.DefaultConfig()
+	player, err := New(cfg)
+	if err != nil {
+		b.Skip("mpv no disponible")
+	}
+	defer player.Close()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = player.State()
+	}
+}
+
+// BenchmarkCheckMPV mide cuánto tarda verificar mpv
+func BenchmarkCheckMPV(b *testing.B) {
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := CheckMPV("mpv")
+		if err != nil {
+			b.Skip("mpv no disponible")
+		}
+	}
+}

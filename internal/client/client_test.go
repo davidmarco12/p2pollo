@@ -211,3 +211,51 @@ func TestExample(t *testing.T) {
 	cfg := config.DefaultConfig()
 	assert.NotNil(t, cfg)
 }
+
+// ============ BENCHMARKS ============
+
+// BenchmarkClientCreation mide cuánto tarda crear un cliente
+func BenchmarkClientCreation(b *testing.B) {
+	cfg := config.DefaultConfig()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		client, err := New(cfg)
+		if err != nil {
+			b.Fatal(err)
+		}
+		client.Close()
+	}
+}
+
+// BenchmarkStats mide cuánto tarda obtener estadísticas
+func BenchmarkStats(b *testing.B) {
+	cfg := config.DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer client.Close()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = client.Stats()
+	}
+}
+
+// BenchmarkMutexContention simula contención de mutex
+// (múltiples goroutines leyendo simultáneamente)
+func BenchmarkMutexContention(b *testing.B) {
+	cfg := config.DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer client.Close()
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_ = client.Stats()
+		}
+	})
+}
