@@ -100,9 +100,9 @@ func DefaultConfig() *Config {
 			SearchTimeout:        30,
 		},
 		Paths: PathsConfig{
-			CacheDir:   filepath.Join(homeDir, ".cache", "streaming-cli"),
-			LogDir:     filepath.Join(homeDir, ".local", "share", "streaming-cli", "logs"),
-			ConfigFile: filepath.Join(homeDir, ".config", "streaming-cli", "config.yaml"),
+			CacheDir:   filepath.Join(homeDir, ".cache", "p2pollo"),
+			LogDir:     filepath.Join(homeDir, ".local", "share", "p2pollo", "logs"),
+			ConfigFile: filepath.Join(homeDir, ".config", "p2pollo", "config.yaml"),
 		},
 		Logging: LoggingConfig{
 			Level:       "info",

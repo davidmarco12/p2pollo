@@ -58,13 +58,13 @@ search:
 # Configuración de paths
 paths:
   # Directorio para caché temporal
-  cache_dir: "~/.cache/streaming-cli"
+  cache_dir: "~/.cache/p2pollo"
   
   # Directorio para logs
-  log_dir: "~/.local/share/streaming-cli/logs"
+  log_dir: "~/.local/share/p2pollo/logs"
   
   # Archivo de configuración
-  config_file: "~/.config/streaming-cli/config.yaml"
+  config_file: "~/.config/p2pollo/config.yaml"
 
 # Configuración de logging
 logging:

@@ -1,85 +1,228 @@
 package player
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/davidmarco12/p2pollo/internal/config"
 	"github.com/stretchr/testify/assert"
 )
 
-// TestNewMPV prueba la creación del controlador de mpv
-func TestNewMPV(t *testing.T) {
-	t.Skip("Pendiente de implementación")
+// TestNew prueba la creación del controlador de mpv
+func TestNew(t *testing.T) {
+	cfg := config.DefaultConfig()
 
-	// TODO: Implementar cuando tengamos NewMPV
-	// config := &Config{MPVPath: "mpv"}
-	// player, err := NewMPV(config)
-	// require.NoError(t, err)
-	// assert.NotNil(t, player)
-	// defer player.Close()
+	player, err := New(cfg)
+
+	// Puede fallar si mpv no está instalado
+	if err != nil {
+		t.Skipf("mpv no disponible: %v", err)
+	}
+
+	assert.NotNil(t, player)
 }
 
-// TestPlay prueba iniciar reproducción
-func TestPlay(t *testing.T) {
-	t.Skip("Pendiente de implementación")
+// TestCheckMPV prueba verificar mpv
+func TestCheckMPV(t *testing.T) {
+	version, err := CheckMPV("mpv")
 
-	// TODO: Implementar cuando tengamos Play
-	// player, _ := NewMPV(&Config{})
-	// defer player.Close()
-	//
-	// mockReader := strings.NewReader("test data")
-	// err := player.Play(mockReader)
-	// assert.NoError(t, err)
+	if err != nil {
+		t.Skipf("mpv no instalado: %v", err)
+	}
+
+	assert.NotEmpty(t, version)
+	assert.Contains(t, version, "mpv")
 }
 
-// TestPause prueba pausar reproducción
-func TestPause(t *testing.T) {
-	t.Skip("Pendiente de implementación")
+// TestState prueba obtener el estado
+func TestState(t *testing.T) {
+	cfg := config.DefaultConfig()
+	player, err := New(cfg)
 
-	// TODO: Implementar cuando tengamos Pause
-	// player, _ := NewMPV(&Config{})
-	// player.Play(mockReader)
-	//
-	// err := player.Pause()
-	// assert.NoError(t, err)
-	// assert.True(t, player.IsPaused())
+	if err != nil {
+		t.Skip("mpv no disponible")
+	}
+
+	state := player.State()
+
+	assert.False(t, state.Playing)
+	assert.False(t, state.Paused)
+	assert.Equal(t, 0.0, state.Position)
 }
 
-// TestSeek prueba saltar a una posición
-func TestSeek(t *testing.T) {
-	t.Skip("Pendiente de implementación")
+// TestIsRunning prueba verificar si está ejecutándose
+func TestIsRunning(t *testing.T) {
+	cfg := config.DefaultConfig()
+	player, err := New(cfg)
 
-	// TODO: Implementar cuando tengamos Seek
-	// player, _ := NewMPV(&Config{})
-	// player.Play(mockReader)
-	//
-	// err := player.Seek(120) // 2 minutos
-	// assert.NoError(t, err)
+	if err != nil {
+		t.Skip("mpv no disponible")
+	}
+
+	running := player.IsRunning()
+	assert.False(t, running)
 }
 
-// TestPosition prueba obtener posición actual
+// TestIsPaused prueba verificar si está pausado
+func TestIsPaused(t *testing.T) {
+	cfg := config.DefaultConfig()
+	player, err := New(cfg)
+
+	if err != nil {
+		t.Skip("mpv no disponible")
+	}
+
+	paused := player.IsPaused()
+	assert.False(t, paused)
+}
+
+// TestPosition prueba obtener posición
 func TestPosition(t *testing.T) {
-	t.Skip("Pendiente de implementación")
+	cfg := config.DefaultConfig()
+	player, err := New(cfg)
 
-	// TODO: Implementar cuando tengamos Position
-	// player, _ := NewMPV(&Config{})
-	// player.Play(mockReader)
-	//
-	// pos := player.Position()
-	// assert.GreaterOrEqual(t, pos, 0.0)
+	if err != nil {
+		t.Skip("mpv no disponible")
+	}
+
+	pos := player.Position()
+	assert.Equal(t, 0.0, pos)
 }
 
-// TestIPCCommunication prueba la comunicación IPC
-func TestIPCCommunication(t *testing.T) {
-	t.Skip("Pendiente de implementación")
+// TestDuration prueba obtener duración
+func TestDuration(t *testing.T) {
+	cfg := config.DefaultConfig()
+	player, err := New(cfg)
 
-	// TODO: Test de integración con mpv real
-	// Requiere mpv instalado en el sistema
+	if err != nil {
+		t.Skip("mpv no disponible")
+	}
+
+	dur := player.Duration()
+	assert.Equal(t, 0.0, dur)
+}
+
+// TestSetVolume_NotRunning prueba setear volumen sin reproducir
+func TestSetVolume_NotRunning(t *testing.T) {
+	cfg := config.DefaultConfig()
+	player, err := New(cfg)
+
+	if err != nil {
+		t.Skip("mpv no disponible")
+	}
+
+	err = player.SetVolume(50)
+	assert.Error(t, err, "Debería fallar si no está ejecutándose")
+}
+
+// TestSetVolume_InvalidRange prueba volumen fuera de rango
+func TestSetVolume_InvalidRange(t *testing.T) {
+	cfg := config.DefaultConfig()
+	player, err := New(cfg)
+
+	if err != nil {
+		t.Skip("mpv no disponible")
+	}
+
+	// Simular que está running para probar validación
+	player.running = true
+	defer func() { player.running = false }()
+
+	err = player.SetVolume(-10)
+	assert.Error(t, err)
+
+	err = player.SetVolume(150)
+	assert.Error(t, err)
+
+	err = player.SetVolume(50)
+	assert.NoError(t, err)
+}
+
+// TestSeek_NotRunning prueba seek sin reproducir
+func TestSeek_NotRunning(t *testing.T) {
+	cfg := config.DefaultConfig()
+	player, err := New(cfg)
+
+	if err != nil {
+		t.Skip("mpv no disponible")
+	}
+
+	err = player.Seek(120)
+	assert.Error(t, err)
+}
+
+// TestPause_NotRunning prueba pausar sin reproducir
+func TestPause_NotRunning(t *testing.T) {
+	cfg := config.DefaultConfig()
+	player, err := New(cfg)
+
+	if err != nil {
+		t.Skip("mpv no disponible")
+	}
+
+	err = player.Pause()
+	assert.Error(t, err)
+}
+
+// TestStop_NotRunning prueba detener sin estar ejecutando
+func TestStop_NotRunning(t *testing.T) {
+	cfg := config.DefaultConfig()
+	player, err := New(cfg)
+
+	if err != nil {
+		t.Skip("mpv no disponible")
+	}
+
+	err = player.Stop()
+	assert.NoError(t, err, "Stop debería ser seguro aunque no esté running")
+}
+
+// TestPlay_AlreadyRunning prueba reproducir cuando ya está ejecutándose
+func TestPlay_AlreadyRunning(t *testing.T) {
+	cfg := config.DefaultConfig()
+	player, err := New(cfg)
+
+	if err != nil {
+		t.Skip("mpv no disponible")
+	}
+
+	// Simular que ya está running
+	player.running = true
+	defer func() { player.running = false }()
+
+	reader := strings.NewReader("test data")
+	err = player.Play(reader)
+	assert.Error(t, err, "No debería permitir Play si ya está running")
+}
+
+// TestEvents prueba obtener canal de eventos
+func TestEvents(t *testing.T) {
+	cfg := config.DefaultConfig()
+	player, err := New(cfg)
+
+	if err != nil {
+		t.Skip("mpv no disponible")
+	}
+
+	events := player.Events()
+	assert.NotNil(t, events)
+}
+
+// TestClose prueba cerrar el player
+func TestClose(t *testing.T) {
+	cfg := config.DefaultConfig()
+	player, err := New(cfg)
+
+	if err != nil {
+		t.Skip("mpv no disponible")
+	}
+
+	err = player.Close()
+	assert.NoError(t, err)
 }
 
 // Ejemplo funcional
 func TestExample(t *testing.T) {
-	// Verificar que el framework de testing funciona
-	volume := 50
-	assert.GreaterOrEqual(t, volume, 0, "El volumen no puede ser negativo")
-	assert.LessOrEqual(t, volume, 100, "El volumen no puede ser mayor a 100")
+	cfg := config.DefaultConfig()
+	assert.NotEmpty(t, cfg.Player.MPVPath)
 }

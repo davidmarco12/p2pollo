@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Script de instalación para Streaming CLI
-# Uso: curl -sSL https://raw.githubusercontent.com/tuusuario/streaming-cli/main/scripts/install.sh | bash
+# Uso: curl -sSL https://raw.githubusercontent.com/tuusuario/p2pollo/main/scripts/install.sh | bash
 
 set -e
 
@@ -47,27 +47,27 @@ fi
 
 # Descargar binario
 VERSION="latest"
-BINARY_NAME="streaming-cli-${OS}-${ARCH}"
+BINARY_NAME="p2pollo-${OS}-${ARCH}"
 if [ "$OS" = "windows" ]; then
     BINARY_NAME="${BINARY_NAME}.exe"
 fi
 
-echo "Descargando streaming-cli..."
-DOWNLOAD_URL="https://github.com/tuusuario/streaming-cli/releases/${VERSION}/download/${BINARY_NAME}"
+echo "Descargando p2pollo..."
+DOWNLOAD_URL="https://github.com/tuusuario/p2pollo/releases/${VERSION}/download/${BINARY_NAME}"
 
 INSTALL_DIR="$HOME/.local/bin"
 mkdir -p "$INSTALL_DIR"
 
 if command -v curl &> /dev/null; then
-    curl -L "$DOWNLOAD_URL" -o "$INSTALL_DIR/streaming-cli"
+    curl -L "$DOWNLOAD_URL" -o "$INSTALL_DIR/p2pollo"
 elif command -v wget &> /dev/null; then
-    wget "$DOWNLOAD_URL" -O "$INSTALL_DIR/streaming-cli"
+    wget "$DOWNLOAD_URL" -O "$INSTALL_DIR/p2pollo"
 else
     echo "Error: curl o wget requerido"
     exit 1
 fi
 
-chmod +x "$INSTALL_DIR/streaming-cli"
+chmod +x "$INSTALL_DIR/p2pollo"
 
 # Verificar PATH
 if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
@@ -83,8 +83,8 @@ echo ""
 echo "✅ Instalación completada!"
 echo ""
 echo "Comandos de inicio:"
-echo "  streaming-cli init              # Inicializar configuración"
-echo "  streaming-cli search <query>    # Buscar contenido"
-echo "  streaming-cli play <magnet>     # Reproducir"
+echo "  p2pollo init              # Inicializar configuración"
+echo "  p2pollo search <query>    # Buscar contenido"
+echo "  p2pollo play <magnet>     # Reproducir"
 echo ""
-echo "Para más información: streaming-cli --help"
+echo "Para más información: p2pollo --help"

@@ -1,5 +1,5 @@
 # Variables
-BINARY_NAME=streaming-cli
+BINARY_NAME=p2pollo
 VERSION?=0.1.0
 BUILD_DIR=./bin
 GO_FILES=$(shell find . -name '*.go' -type f -not -path "./vendor/*")

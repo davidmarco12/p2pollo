@@ -27,8 +27,8 @@ search:
   search_timeout: 15
 
 paths:
-  cache_dir: "/tmp/streaming-cli-test"
-  log_dir: "/tmp/streaming-cli-test/logs"
+  cache_dir: "/tmp/p2pollo-test"
+  log_dir: "/tmp/p2pollo-test/logs"
 
 logging:
   level: "debug"

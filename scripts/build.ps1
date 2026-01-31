@@ -4,7 +4,7 @@ param(
     [string]$Command = "build"
 )
 
-$BINARY_NAME = "streaming-cli.exe"
+$BINARY_NAME = "p2pollo.exe"
 $VERSION = "0.1.0"
 $BUILD_DIR = ".\bin"
 
