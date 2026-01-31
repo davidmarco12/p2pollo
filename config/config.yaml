@@ -25,13 +25,12 @@ client:
 # Configuración del reproductor
 player:
   # Ruta al ejecutable de mpv (dejar vacío para usar el del PATH)
-  mpv_path: ""
+  mpv_path: "mpv"
   
-  # Opciones adicionales para mpv
+  # Opciones adicionales para mpv (las opciones de caché y streaming se aplican automáticamente)
   mpv_options:
-    - "--cache=yes"
-    - "--demuxer-max-bytes=150M"
-    - "--demuxer-max-back-bytes=75M"
+    - "--osd-on-seek=msg"
+    - "--osd-level=2"
 
 # Configuración de streaming
 streaming:

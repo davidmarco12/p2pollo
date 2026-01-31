@@ -53,15 +53,15 @@ func New(cfg *config.Config) (*Client, error) {
 	// Configurar cliente torrent
 	clientCfg := torrent.NewDefaultClientConfig()
 	clientCfg.DataDir = cfg.Paths.CacheDir
-	clientCfg.NoUpload = false // Permitir upload (ser buen peer)
-	clientCfg.Seed = true
+
+	// Para streaming: no hacer upload durante la descarga
+	clientCfg.NoUpload = true
+	clientCfg.Seed = false
 
 	// Configurar puerto
 	if cfg.Client.Port > 0 {
 		clientCfg.ListenPort = cfg.Client.Port
-	}
-
-	// Configurar límites de velocidad
+	} // Configurar límites de velocidad
 	// Nota: anacrolix/torrent no tiene rate limiter built-in en versiones recientes
 	// Se puede implementar a nivel de aplicación si es necesario
 	// Por ahora dejamos sin límites y lo implementaremos después si es requerido

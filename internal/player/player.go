@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"runtime"
 	"sync"
 	"time"
 
@@ -80,16 +82,40 @@ func (m *MPV) Play(reader io.Reader) error {
 		return fmt.Errorf("mpv ya está ejecutándose")
 	}
 
-	m.log.Info("Iniciando reproducción con mpv")
+	m.log.Info("Iniciando reproducción con mpv (streaming mode)")
 
-	// Construir argumentos de mpv
+	// Crear un archivo temporal para el streaming
+	tmpFile, err := os.CreateTemp("", "mpv-stream-*.mp4")
+	if err != nil {
+		return fmt.Errorf("error creando archivo temporal: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+
+	// Copiar datos del reader al archivo temporal en un goroutine
+	go func() {
+		defer tmpFile.Close()
+		_, err := io.Copy(tmpFile, reader)
+		if err != nil {
+			m.log.Errorf("Error copiando a archivo temporal: %v", err)
+		}
+	}()
+
+	// Esperar a que se escriban suficientes datos (5MB aprox)
+	m.log.Debug("Esperando datos iniciales...")
+	time.Sleep(2 * time.Second)
+
+	// Verificar que el archivo tiene datos
+	stat, err := os.Stat(tmpPath)
+	if err != nil || stat.Size() < 1024*1024 {
+		m.log.Warnf("Archivo temporal muy pequeño (%.1f MB), continuando...", float64(stat.Size())/(1024*1024))
+	}
+
+	// Construir argumentos de mpv optimizados
 	args := []string{
-		"--no-terminal",                     // Sin interfaz de terminal
-		"--idle=yes",                        // Mantener abierto
-		"--force-window=yes",                // Forzar ventana
-		"--keep-open=yes",                   // Mantener abierto al terminar
-		"--input-ipc-server=/tmp/mpvsocket", // IPC (en Windows usar named pipe)
-		"-",                                 // Leer desde stdin
+		"--force-window=immediate", // Mostrar ventana inmediatamente
+		"--cache=yes",              // Activar cache
+		"--cache-secs=60",          // Cache de 60 segundos
+		tmpPath,                    // Reproducir archivo temporal
 	}
 
 	// Agregar opciones configuradas
@@ -98,41 +124,28 @@ func (m *MPV) Play(reader io.Reader) error {
 	// Crear comando
 	m.cmd = exec.Command(m.config.Player.MPVPath, args...)
 
-	// Configurar pipes
-	stdin, err := m.cmd.StdinPipe()
-	if err != nil {
-		return fmt.Errorf("error creando stdin: %w", err)
-	}
-	m.stdin = stdin
-
-	stdout, err := m.cmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("error creando stdout: %w", err)
-	}
-	m.stdout = stdout
+	// Mostrar stderr de MPV para debugging
+	m.cmd.Stderr = os.Stderr
+	m.log.Debugf("MPV args: %v", args)
 
 	// Iniciar mpv
 	err = m.cmd.Start()
 	if err != nil {
+		os.Remove(tmpPath)
 		return fmt.Errorf("error iniciando mpv: %w", err)
 	}
 
 	m.running = true
 	m.paused = false
+	m.log.Info("mpv iniciado correctamente para reproducir temporal")
 
-	// Copiar datos del reader a mpv en background
+	// Limpiar archivo temporal cuando mpv termina
 	go func() {
-		defer stdin.Close()
-		_, err := io.Copy(stdin, reader)
-		if err != nil {
-			m.log.Errorf("Error copiando datos a mpv: %v", err)
-		}
+		m.cmd.Wait()
+		time.Sleep(1 * time.Second)
+		os.Remove(tmpPath)
+		m.log.Debugf("Archivo temporal eliminado: %s", tmpPath)
 	}()
-
-	// Monitorear stdout
-	go m.monitorOutput()
-
-	m.log.Info("mpv iniciado correctamente")
 
 	return nil
 }
@@ -148,20 +161,86 @@ func (m *MPV) PlayFile(filepath string) error {
 
 	m.log.Infof("Reproduciendo archivo: %s", filepath)
 
+	// Argumentos optimizados para reproducir archivos en descarga
 	args := []string{
-		"--no-terminal",
-		"--idle=yes",
-		"--force-window=yes",
-		"--keep-open=yes",
-		filepath,
+		"--force-window=yes",                    // Forzar ventana visible
+		"--cache=yes",                           // Activar cache
+		"--cache-secs=120",                      // Cache de 120 segundos para tolerar pausas
+		"--force-media-title=P2Pollo Streaming", // Título custom (más visible)
+		"--ytdl=no",                             // No intentar descargar
+		"--keepaspect=yes",                      // Mantener relación de aspecto
+		"--pause=no",                            // No pausar al abrir
+		filepath,                                // Ruta del archivo
 	}
 	args = append(args, m.config.Player.MPVOptions...)
 
-	m.cmd = exec.Command(m.config.Player.MPVPath, args...)
+	m.log.Debugf("MPV args: %v", args)
+	m.log.Infof("Ejecutando: %s %v", m.config.Player.MPVPath, args)
 
-	err := m.cmd.Start()
-	if err != nil {
-		return fmt.Errorf("error iniciando mpv: %w", err)
+	// Obtener la ruta completa de MPV
+	mpvPath := m.config.Player.MPVPath
+	if mpvPath == "" {
+		mpvPath = "mpv"
+	}
+
+	// En Windows, buscar la ruta completa
+	if runtime.GOOS == "windows" {
+		fullPath, err := exec.LookPath(mpvPath)
+		if err != nil {
+			return fmt.Errorf("mpv no encontrado en PATH: %w", err)
+		}
+		mpvPath = fullPath
+
+		m.log.Infof("Ruta completa de MPV: %s", mpvPath)
+
+		// Usar StartProcess directamente para mejor control
+		procAttr := &os.ProcAttr{
+			Files: []*os.File{os.Stdin, os.Stdout, os.Stderr},
+		}
+
+		proc, err := os.StartProcess(mpvPath, append([]string{mpvPath}, args...), procAttr)
+		if err != nil {
+			return fmt.Errorf("error iniciando mpv: %w", err)
+		}
+
+		// Guardar el proceso para poder esperar luego
+		m.cmd = &exec.Cmd{
+			Path:    mpvPath,
+			Args:    append([]string{mpvPath}, args...),
+			Stdout:  os.Stdout,
+			Stderr:  os.Stderr,
+			Stdin:   os.Stdin,
+			Process: proc,
+		}
+	} else {
+		m.cmd = exec.Command(mpvPath, args...)
+
+		// Capturar para logging
+		stdoutPipe, _ := m.cmd.StdoutPipe()
+		stderrPipe, _ := m.cmd.StderrPipe()
+
+		go func() {
+			if stdoutPipe != nil {
+				scanner := bufio.NewScanner(stdoutPipe)
+				for scanner.Scan() {
+					m.log.Debugf("[MPV stdout] %s", scanner.Text())
+				}
+			}
+		}()
+
+		go func() {
+			if stderrPipe != nil {
+				scanner := bufio.NewScanner(stderrPipe)
+				for scanner.Scan() {
+					m.log.Warnf("[MPV stderr] %s", scanner.Text())
+				}
+			}
+		}()
+
+		err := m.cmd.Start()
+		if err != nil {
+			return fmt.Errorf("error iniciando mpv: %w", err)
+		}
 	}
 
 	m.running = true
@@ -306,6 +385,11 @@ func (m *MPV) Wait() error {
 
 // monitorOutput monitorea la salida de mpv
 func (m *MPV) monitorOutput() {
+	if m.stdout == nil {
+		// Si no hay stdout, simplemente retornar
+		return
+	}
+
 	scanner := bufio.NewScanner(m.stdout)
 
 	for scanner.Scan() {

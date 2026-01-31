@@ -85,8 +85,6 @@ func DefaultConfig() *Config {
 			MPVPath: "mpv",
 			MPVOptions: []string{
 				"--cache=yes",
-				"--demuxer-max-bytes=150M",
-				"--demuxer-max-back-bytes=75M",
 			},
 		},
 		Streaming: StreamingConfig{
