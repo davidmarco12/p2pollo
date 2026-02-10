@@ -5,19 +5,22 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/davidmarco12/p2pollo/internal/client"
 	"github.com/davidmarco12/p2pollo/internal/config"
 	"github.com/davidmarco12/p2pollo/internal/player"
 	"github.com/fatih/color"
-	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 )
 
 var (
 	playFileIndex int
 	playNoBuffer  bool
+	playUsePipe   bool // Modo experimental: streaming real
+	playLowMemory bool // Modo bajo consumo de memoria
 )
 
 // playCmd representa el comando play
@@ -37,8 +40,9 @@ Ejemplos:
 func init() {
 	rootCmd.AddCommand(playCmd)
 
-	playCmd.Flags().IntVar(&playFileIndex, "file", 0, "índice del archivo a reproducir")
+	playCmd.Flags().IntVar(&playFileIndex, "file", -1, "índice del archivo a reproducir (-1 = auto-detectar)")
 	playCmd.Flags().BoolVar(&playNoBuffer, "no-buffer", false, "reproducir sin esperar buffer completo")
+	playCmd.Flags().BoolVar(&playLowMemory, "low-memory", false, "modo bajo consumo de memoria (para máquinas con < 100MB RAM)")
 }
 
 func runPlay(cmd *cobra.Command, args []string) {
@@ -52,7 +56,10 @@ func runPlay(cmd *cobra.Command, args []string) {
 
 	// Crear cliente
 	fmt.Println("🔧 Iniciando cliente P2P...")
-	c, err := client.New(cfg)
+	if playLowMemory {
+		fmt.Println("💾 Modo bajo consumo de memoria activado")
+	}
+	c, err := client.NewWithOptions(cfg, playLowMemory)
 	if err != nil {
 		color.Red("❌ Error creando cliente: %v", err)
 		return
@@ -69,7 +76,7 @@ func runPlay(cmd *cobra.Command, args []string) {
 
 	// Esperar metadata
 	fmt.Println("⏳ Obteniendo información del torrent...")
-	err = t.WaitForInfo(30 * time.Second)
+	err = t.WaitForInfo(60 * time.Second) // Aumentado a 60 segundos para conexiones lentas
 	if err != nil {
 		color.Red("❌ Error obteniendo metadata: %v", err)
 		return
@@ -81,15 +88,39 @@ func runPlay(cmd *cobra.Command, args []string) {
 	fmt.Printf("  Nombre: %s\n", info.Name)
 	fmt.Printf("  Tamaño: %.2f MB\n", float64(info.TotalLength)/(1024*1024))
 	fmt.Printf("  Archivos: %d\n", len(info.Files))
+	fmt.Printf("  Peers: %d\n", t.Peers())
 	fmt.Println()
 
-	// Listar archivos si hay múltiples
+	// Auto-detectar archivo multimedia si no se especificó --file
+	if playFileIndex == -1 {
+		playFileIndex = findMediaFile(info.Files)
+	}
+
+	// Validar que el índice del archivo sea válido
+	if playFileIndex < 0 || playFileIndex >= len(info.Files) {
+		color.Red("❌ Error: Índice de archivo inválido. Debe estar entre 0 y %d", len(info.Files)-1)
+		return
+	}
+
+	// Listar archivos
 	if len(info.Files) > 1 {
 		color.Cyan("📁 Archivos disponibles:")
 		for i, file := range info.Files {
-			fmt.Printf("  [%d] %s (%.2f MB)\n", i, file.Path, float64(file.Length)/(1024*1024))
+			marker := "  "
+			if i == playFileIndex {
+				marker = "▶ "
+			}
+			fmt.Printf("  %s[%d] %s (%.2f MB)\n", marker, i, file.Path, float64(file.Length)/(1024*1024))
 		}
 		fmt.Printf("\nReproduciendo archivo: [%d] %s\n\n", playFileIndex, info.Files[playFileIndex].Path)
+	} else {
+		fmt.Printf("📁 Reproduciendo: %s\n\n", info.Files[playFileIndex].Path)
+	}
+
+	// Opción experimental: streaming real
+	if playUsePipe {
+		playWithPipeStreaming(t, cfg, info, playFileIndex)
+		return
 	}
 
 	// Priorizar para streaming
@@ -99,54 +130,55 @@ func runPlay(cmd *cobra.Command, args []string) {
 		readahead = info.NumPieces
 	}
 	t.PrioritizeSequential(0, readahead-1)
+
+	// Priorizar últimas piezas para el moov atom (MP4 no-faststart lo tienen al final)
+	targetSize := info.Files[playFileIndex].Length
+	moovSize := int64(5 * 1024 * 1024)
+	if moovSize > targetSize {
+		moovSize = targetSize
+	}
+	moovPieces := int(moovSize/info.PieceLength) + 1
+	lastPiece := info.NumPieces - 1
+	firstMoovPiece := lastPiece - moovPieces
+	if firstMoovPiece < 0 {
+		firstMoovPiece = 0
+	}
+	t.PrioritizeSequential(firstMoovPiece, lastPiece)
+	fmt.Printf("  Piezas inicio: 0-%d, moov: %d-%d\n", readahead-1, firstMoovPiece, lastPiece)
+
 	t.Download()
 
-	// Buffer inicial
-	if !playNoBuffer {
-		bufferSize := int64(50 * 1024 * 1024) // 50MB para mejor compatibilidad con MP4
-		fmt.Printf("⏳ Buffering (%.1f MB)...\n", float64(bufferSize)/(1024*1024))
+	// Crear archivo temporal en ~/.cache/p2pollo/temp/
+	fmt.Println("🎬 Preparando para reproducción...")
 
-		bar := progressbar.NewOptions(100,
-			progressbar.OptionSetDescription("Buffer  "),
-			progressbar.OptionSetWidth(50),
-			progressbar.OptionShowCount(),
-		)
-
-		timeout := time.After(2 * time.Minute)
-		ticker := time.NewTicker(500 * time.Millisecond)
-		defer ticker.Stop()
-
-		bufferReady := false
-		for !bufferReady {
-			select {
-			case <-timeout:
-				fmt.Println()
-				color.Red("❌ Timeout - usa --no-buffer")
-				return
-			case <-ticker.C:
-				buffered := t.BytesCompleted()
-				progress := int((float64(buffered) / float64(bufferSize)) * 100)
-				if progress > 100 {
-					progress = 100
-				}
-				bar.Set(progress)
-
-				if buffered >= bufferSize {
-					bar.Finish()
-					bufferReady = true
-				}
-			}
-		}
-		fmt.Println()
-		color.Green("✓ Buffer listo (%.1f MB)\n", float64(t.BytesCompleted())/(1024*1024))
+	// Crear directorio de caché si no existe
+	home, err := os.UserHomeDir()
+	if err != nil {
+		color.Red("❌ Error obteniendo home directory: %v", err)
+		return
+	}
+	cacheDir := filepath.Join(home, ".cache", "p2pollo", "temp")
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		color.Red("❌ Error creando directorio de caché: %v", err)
+		return
 	}
 
-	// Crear archivo temporal
-	fmt.Println("🎬 Preparando para reproducción...")
-	tmpPath := filepath.Join(os.TempDir(), fmt.Sprintf("p2pollo-stream-%d.mp4", time.Now().Unix()))
-	tmpFileHandle, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY, 0644)
+	// Usar la extensión real del archivo del torrent
+	fileExt := filepath.Ext(info.Files[playFileIndex].Path)
+	if fileExt == "" {
+		fileExt = ".mp4"
+	}
+	tmpPath := filepath.Join(cacheDir, fmt.Sprintf("p2pollo-stream-%d%s", time.Now().Unix(), fileExt))
+	tmpFileHandle, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		color.Red("❌ Error creando archivo temporal: %v", err)
+		return
+	}
+
+	// Pre-allocar archivo para poder escribir el moov atom al final
+	if err := tmpFileHandle.Truncate(targetSize); err != nil {
+		color.Red("❌ Error pre-allocando archivo: %v", err)
+		tmpFileHandle.Close()
 		return
 	}
 
@@ -163,104 +195,128 @@ func runPlay(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	// Goroutine para copiar datos del torrent al temporal
-	stopCopy := make(chan bool)
-
+	// Goroutine: descargar moov atom (final del archivo)
+	// Los MP4 no-faststart tienen el índice al final, sin él mpv no puede abrir el archivo
+	moovOffset := targetSize - moovSize
+	moovDone := make(chan bool, 1)
 	go func() {
-		fmt.Println("[DEBUG] Iniciando goroutine de copia desde anacrolix reader")
-
-		fmt.Println("[DEBUG] ✓ Archivo fuente disponible, iniciando copia")
+		fmt.Printf("📡 Descargando índice del archivo (últimos %.1f MB)...\n", float64(moovSize)/(1024*1024))
+		var moovReader io.ReadSeeker
+		if len(info.Files) == 1 {
+			moovReader = t.NewReader()
+		} else {
+			moovReader, _ = t.NewFileReader(playFileIndex)
+		}
+		moovReader.Seek(moovOffset, io.SeekStart)
 		buf := make([]byte, 64*1024)
-		bytesWritten := int64(0)
-		readCounter := 0
+		written := int64(0)
+		for written < moovSize {
+			n, readErr := moovReader.Read(buf)
+			if n > 0 {
+				tmpFileHandle.WriteAt(buf[:n], moovOffset+written)
+				written += int64(n)
+			}
+			if readErr != nil {
+				break
+			}
+		}
+		fmt.Printf("\n✓ Moov atom listo (%.1f MB)\n", float64(written)/(1024*1024))
+		moovDone <- true
+	}()
+
+	// Goroutine: copia secuencial desde el inicio del archivo
+	var headWritten int64
+	stopCopy := make(chan bool)
+	go func() {
+		buf := make([]byte, 64*1024)
 		for {
 			select {
 			case <-stopCopy:
-				fmt.Printf("[DEBUG] ⏹ Deteniendo goroutine de copia (escribí %d bytes en %d reads)\n", bytesWritten, readCounter)
+				fmt.Printf("[DEBUG] ⏹ Copia detenida (%d bytes)\n", atomic.LoadInt64(&headWritten))
 				tmpFileHandle.Sync()
-				tmpFileHandle.Close()
 				return
 			default:
-				n, err := fileReader.Read(buf)
+				n, readErr := fileReader.Read(buf)
 				if n > 0 {
-					readCounter++
-					m, writeErr := tmpFileHandle.Write(buf[:n])
-					bytesWritten += int64(m)
-					if writeErr != nil {
-						fmt.Printf("[DEBUG] ❌ Error escribiendo: %v\n", writeErr)
-						tmpFileHandle.Close()
-						return
+					offset := atomic.LoadInt64(&headWritten)
+					tmpFileHandle.WriteAt(buf[:n], offset)
+					atomic.AddInt64(&headWritten, int64(n))
+				}
+				if readErr != nil {
+					if readErr == io.EOF {
+						fmt.Printf("[DEBUG] ✓ Copia completa (%d bytes)\n", atomic.LoadInt64(&headWritten))
 					}
 					tmpFileHandle.Sync()
-				}
-				if err != nil {
-					if err == io.EOF {
-						fmt.Printf("[DEBUG] ✓ EOF alcanzado (total: %d bytes en %d reads)\n", bytesWritten, readCounter)
-						tmpFileHandle.Sync()
-						tmpFileHandle.Close()
-						return
-					}
-					fmt.Printf("[DEBUG] ❌ Error de lectura: %v\n", err)
-					tmpFileHandle.Close()
 					return
 				}
 			}
 		}
 	}()
 
-	// Esperar a que haya un buffer mínimo, luego lanzar reproducción
-	fmt.Println("⏳ Esperando buffer inicial para reproducción...")
-	downloadTimeout := time.After(10 * time.Minute)
+	// Determinar buffer mínimo para lanzar MPV
+	var minBufferToPlay int64
+	if playNoBuffer {
+		minBufferToPlay = 5 * 1024 * 1024
+		fmt.Println("✓ Modo sin buffer (5MB mínimo)")
+	} else {
+		minBufferToPlay = 200 * 1024 * 1024
+		if minBufferToPlay > targetSize {
+			minBufferToPlay = targetSize
+		}
+		fmt.Printf("📽️  Buffer objetivo: %.0f MB\n", float64(minBufferToPlay)/(1024*1024))
+	}
+
+	downloadTimeout := time.After(30 * time.Minute)
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
-	targetSize := info.Files[playFileIndex].Length
-
-	// Determinar estrategia según tamaño del archivo
-	var minBufferToPlay int64
-	if targetSize < 300*1024*1024 { // Archivos < 300MB: esperar descarga completa
-		minBufferToPlay = targetSize
-		fmt.Println("📹 Archivo pequeño - esperando descarga completa...")
-	} else { // Archivos >= 300MB: usar buffer de 200MB
-		minBufferToPlay = 200 * 1024 * 1024
-		fmt.Println("📽️  Archivo grande - reproduciendo con buffer de 200MB...")
-	}
-
+	moovIsReady := false
 	bufferReady := false
-	downloadComplete := false
+	lastSize := int64(0)
+	lastTime := time.Now()
 
-	// Monitorear buffer para lanzar MPV cuando esté listo
-	for !bufferReady && !downloadComplete {
+	// Esperar: moov atom descargado + buffer mínimo alcanzado
+	for !bufferReady {
 		select {
+		case <-moovDone:
+			moovIsReady = true
 		case <-downloadTimeout:
 			fmt.Println()
 			close(stopCopy)
 			color.Red("❌ Timeout esperando buffer")
+			tmpFileHandle.Close()
 			os.Remove(tmpPath)
 			return
 		case <-ticker.C:
-			stat, _ := os.Stat(tmpPath)
-			if stat != nil {
-				currentSize := stat.Size()
-				progress := int((float64(currentSize) / float64(targetSize)) * 100)
+			currentHead := atomic.LoadInt64(&headWritten)
+
+			elapsed := time.Since(lastTime).Seconds()
+			if elapsed > 0 {
+				speed := float64(currentHead-lastSize) / (1024 * 1024) / elapsed
+				progress := int((float64(currentHead) / float64(targetSize)) * 100)
 				if progress > 100 {
 					progress = 100
 				}
-				fmt.Printf("\r⏳ Buffer: %.1f/%.1f MB (%d%%) [necesarios %.0f MB]",
-					float64(currentSize)/(1024*1024),
+				moovStatus := "⏳"
+				if moovIsReady {
+					moovStatus = "✓"
+				}
+				fmt.Printf("\r⏳ Buffer: %.1f/%.1f MB (%d%%) [%.2f MB/s] [moov: %s]",
+					float64(currentHead)/(1024*1024),
 					float64(targetSize)/(1024*1024),
 					progress,
-					float64(minBufferToPlay)/(1024*1024))
+					speed,
+					moovStatus)
 
-				if currentSize >= minBufferToPlay {
-					fmt.Println()
-					fmt.Printf("✓ Buffer listo (%.1f MB) - Iniciando reproducción\n\n", float64(currentSize)/(1024*1024))
-					bufferReady = true
-				}
+				lastSize = currentHead
+				lastTime = time.Now()
+			}
 
-				if currentSize >= targetSize {
-					downloadComplete = true
-				}
+			if moovIsReady && currentHead >= minBufferToPlay {
+				fmt.Println()
+				fmt.Printf("✓ Buffer listo (%.1f MB) - Iniciando reproducción\n\n", float64(currentHead)/(1024*1024))
+				tmpFileHandle.Sync()
+				bufferReady = true
 			}
 		}
 	}
@@ -334,6 +390,7 @@ func runPlay(cmd *cobra.Command, args []string) {
 	close(done)
 
 	close(stopCopy)
+	tmpFileHandle.Close()
 	p.Close()
 
 	// Esperar un poco más para asegurar que MPV liberó el archivo
@@ -345,4 +402,82 @@ func runPlay(cmd *cobra.Command, args []string) {
 
 	fmt.Println()
 	color.Green("✓ Finalizado")
+}
+
+func playWithPipeStreaming(t *client.Torrent, cfg *config.Config, info client.TorrentInfo, fileIdx int) {
+	color.Cyan("🚀 Modo streaming real (stdin)")
+
+	// Priorizar piezas
+	fmt.Println("📡 Priorizando...")
+	t.PrioritizeSequential(0, 100)
+	t.Download()
+
+	// Buffer mínimo (solo 10 MB)
+	bufferSize := int64(10 * 1024 * 1024)
+	fmt.Printf("⏳ Buffering %.1f MB...\n", float64(bufferSize)/(1024*1024))
+
+	for t.BytesCompleted() < bufferSize {
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	color.Green("✓ Buffer listo\n")
+
+	// Crear reader directo del torrent
+	var reader io.ReadSeeker
+	if len(info.Files) == 1 {
+		reader = t.NewReader()
+	} else {
+		var err error
+		reader, err = t.NewFileReader(fileIdx)
+		if err != nil {
+			color.Red("❌ Error: %v", err)
+			return
+		}
+	}
+
+	// Iniciar MPV
+	p, _ := player.New(cfg)
+	defer p.Close()
+
+	// CLAVE: Play con reader (stdin) en lugar de PlayFile
+	err := p.Play(reader)
+	if err != nil {
+		color.Red("❌ Error: %v", err)
+		return
+	}
+
+	color.Green("✓ Streaming activo")
+	fmt.Println("💡 Datos van directo de torrent → MPV (no usa disco)\n")
+
+	// Monitor
+	go func() {
+		for {
+			time.Sleep(3 * time.Second)
+			color.Cyan("  📊 %.1f%% | %d peers", t.Progress(), t.Peers())
+		}
+	}()
+
+	p.Wait()
+	color.Green("✓ Finalizado")
+}
+
+// findMediaFile busca el archivo multimedia más grande en la lista de archivos.
+// Retorna el índice del archivo con extensión de video más grande, o 0 si no encuentra ninguno.
+func findMediaFile(files []client.FileInfo) int {
+	videoExts := map[string]bool{
+		".mkv": true, ".mp4": true, ".avi": true, ".webm": true,
+		".mov": true, ".flv": true, ".wmv": true, ".m4v": true,
+		".ts": true, ".mpg": true, ".mpeg": true,
+	}
+
+	bestIdx := 0
+	bestSize := int64(0)
+	for i, f := range files {
+		ext := strings.ToLower(filepath.Ext(f.Path))
+		if videoExts[ext] && f.Length > bestSize {
+			bestIdx = i
+			bestSize = f.Length
+		}
+	}
+	return bestIdx
 }

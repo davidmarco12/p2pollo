@@ -69,6 +69,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "output detallado")
 	rootCmd.PersistentFlags().BoolVar(&profile, "profile", false, "habilitar profiling pprof")
 	rootCmd.PersistentFlags().StringVar(&pprof, "pprof-port", "6060", "puerto para servidor pprof")
+	playCmd.Flags().BoolVar(&playUsePipe, "pipe", false, "streaming real via stdin (experimental)")
 }
 
 // initConfig lee el archivo de configuración

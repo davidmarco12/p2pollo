@@ -50,6 +50,12 @@ type FileInfo struct {
 
 // New crea un nuevo cliente torrent
 func New(cfg *config.Config) (*Client, error) {
+	return NewWithOptions(cfg, false)
+}
+
+// NewWithOptions crea un nuevo cliente torrent con opciones personalizadas
+// lowMemory: activa modo ultra-conservador para máquinas con < 100MB RAM
+func NewWithOptions(cfg *config.Config, lowMemory bool) (*Client, error) {
 	// Configurar cliente torrent
 	clientCfg := torrent.NewDefaultClientConfig()
 	clientCfg.DataDir = cfg.Paths.CacheDir
@@ -57,6 +63,24 @@ func New(cfg *config.Config) (*Client, error) {
 	// Para streaming: no hacer upload durante la descarga
 	clientCfg.NoUpload = true
 	clientCfg.Seed = false
+
+	// Limitar conexiones simultáneas para evitar "Not enough memory" en Windows
+	if lowMemory {
+		// Modo ultra-bajo para máquinas con < 100MB RAM
+		clientCfg.HalfOpenConnsPerTorrent = 2    // Mínimo absoluto
+		clientCfg.TorrentPeersLowWater = 1       // Solo 1 peer mínimo
+		clientCfg.TorrentPeersHighWater = 3      // Máximo 3 peers
+		clientCfg.EstablishedConnsPerTorrent = 2 // 2 conexiones máximo
+	} else {
+		// Modo normal - valores que funcionaban bien
+		clientCfg.HalfOpenConnsPerTorrent = 16    // Estándar
+		clientCfg.TorrentPeersLowWater = 5        // Mantener mínimo de peers
+		clientCfg.TorrentPeersHighWater = 30      // Máximo de peers
+		clientCfg.EstablishedConnsPerTorrent = 20 // Conexiones establecidas
+	}
+
+	// Limitar chunks en paralelo
+	clientCfg.DisableAcceptRateLimiting = false
 
 	// Configurar puerto
 	if cfg.Client.Port > 0 {
@@ -218,12 +242,25 @@ func (t *Torrent) Info() TorrentInfo {
 		return TorrentInfo{}
 	}
 
-	files := make([]FileInfo, len(info.Files))
-	for i, f := range info.Files {
-		files[i] = FileInfo{
-			Path:   f.DisplayPath(info),
-			Length: f.Length,
-			Index:  i,
+	var files []FileInfo
+	if len(info.Files) == 0 {
+		// Torrent de un solo archivo: info.Files está vacío,
+		// los datos están en info.Name e info.Length directamente
+		files = []FileInfo{
+			{
+				Path:   t.t.Name(),
+				Length: t.t.Length(),
+				Index:  0,
+			},
+		}
+	} else {
+		files = make([]FileInfo, len(info.Files))
+		for i, f := range info.Files {
+			files[i] = FileInfo{
+				Path:   f.DisplayPath(info),
+				Length: f.Length,
+				Index:  i,
+			}
 		}
 	}
 
