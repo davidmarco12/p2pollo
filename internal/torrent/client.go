@@ -1,4 +1,4 @@
-package client
+package torrent
 
 import (
 	"fmt"
@@ -6,15 +6,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/anacrolix/torrent"
+	libtorrent "github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/metainfo"
+	"github.com/anacrolix/torrent/storage"
 	"github.com/davidmarco12/p2pollo/internal/config"
 	"github.com/sirupsen/logrus"
 )
 
 // Client wrapper alrededor de anacrolix/torrent
 type Client struct {
-	tc     *torrent.Client
+	tc     *libtorrent.Client
 	config *config.Config
 	log    *logrus.Logger
 	mu     sync.RWMutex
@@ -57,8 +58,20 @@ func New(cfg *config.Config) (*Client, error) {
 // lowMemory: activa modo ultra-conservador para máquinas con < 100MB RAM
 func NewWithOptions(cfg *config.Config, lowMemory bool) (*Client, error) {
 	// Configurar cliente torrent
-	clientCfg := torrent.NewDefaultClientConfig()
-	clientCfg.DataDir = cfg.Paths.CacheDir
+	clientCfg := libtorrent.NewDefaultClientConfig()
+
+	// NO setear DataDir: cuando DefaultStorage está seteado, DataDir es ignorado.
+	// Si DataDir queda vacío y DefaultStorage es nil (nunca en nuestro caso),
+	// el fallback usaría mmap. Dejarlo vacío para evitar cualquier ambigüedad.
+
+	// Storage custom sin mmap. El default de anacrolix usa mmap (MapViewOfFile)
+	// para datos y BoltDB para piece completion, ambos fallan en Windows
+	// con archivos grandes (>1GB): "Not enough memory resources".
+	// Nuestro NewFileStorage usa puro os.File.ReadAt/WriteAt.
+	clientCfg.DefaultStorage = NewFileStorage(
+		cfg.Paths.CacheDir,
+		storage.NewMapPieceCompletion(),
+	)
 
 	// Para streaming: no hacer upload durante la descarga
 	clientCfg.NoUpload = true
@@ -91,7 +104,7 @@ func NewWithOptions(cfg *config.Config, lowMemory bool) (*Client, error) {
 	// Por ahora dejamos sin límites y lo implementaremos después si es requerido
 
 	// Crear cliente
-	tc, err := torrent.NewClient(clientCfg)
+	tc, err := libtorrent.NewClient(clientCfg)
 	if err != nil {
 		return nil, fmt.Errorf("error creando cliente torrent: %w", err)
 	}
@@ -216,7 +229,7 @@ func (c *Client) Close() error {
 
 // Torrent wrapper alrededor de anacrolix/torrent.Torrent
 type Torrent struct {
-	t      *torrent.Torrent
+	t      *libtorrent.Torrent
 	client *Client
 	mu     sync.RWMutex
 }
@@ -329,7 +342,7 @@ func (t *Torrent) PrioritizeSequential(startPiece, endPiece int) error {
 
 	// Priorizar rango de pieces
 	for i := startPiece; i <= endPiece; i++ {
-		t.t.Piece(i).SetPriority(torrent.PiecePriorityNow)
+		t.t.Piece(i).SetPriority(libtorrent.PiecePriorityNow)
 	}
 
 	t.client.log.Debugf("Priorizados pieces %d-%d", startPiece, endPiece)
@@ -358,7 +371,7 @@ func (t *Torrent) Progress() float64 {
 }
 
 // Stats retorna estadísticas del torrent
-func (t *Torrent) Stats() torrent.TorrentStats {
+func (t *Torrent) Stats() libtorrent.TorrentStats {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 

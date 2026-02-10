@@ -1,211 +1,119 @@
 package stream
 
 import (
+	"context"
 	"testing"
-	"time"
 
-	"github.com/davidmarco12/p2pollo/internal/client"
 	"github.com/davidmarco12/p2pollo/internal/config"
+	"github.com/davidmarco12/p2pollo/internal/torrent"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// TestNew prueba la creación del gestor de streaming
+// TestNew prueba la creación del Manager
 func TestNew(t *testing.T) {
 	cfg := config.DefaultConfig()
-	c, err := client.New(cfg)
+	c, err := torrent.New(cfg)
 	require.NoError(t, err)
 	defer c.Close()
 
-	sm := New(c, cfg)
-	assert.NotNil(t, sm)
-	assert.NotNil(t, sm.client)
-	assert.NotNil(t, sm.config)
+	m := New(cfg, c)
+	assert.NotNil(t, m)
+	assert.NotNil(t, m.client)
+	assert.NotNil(t, m.cfg)
 }
 
-// TestPrepareStream prueba la preparación del stream
-func TestPrepareStream(t *testing.T) {
+// TestPrepare prueba la preparación con magnet
+func TestPrepare(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping test que requiere red")
 	}
 
 	cfg := config.DefaultConfig()
-	c, err := client.New(cfg)
+	c, err := torrent.New(cfg)
 	require.NoError(t, err)
 	defer c.Close()
 
-	sm := New(c, cfg)
+	m := New(cfg, c)
 
-	// Agregar torrent
-	magnet := "magnet:?xt=urn:btih:dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c"
-	torrent, err := c.AddMagnet(magnet)
-	require.NoError(t, err)
-
-	// Esperar metadata
-	err = torrent.WaitForInfo(30 * time.Second)
+	ctx := context.Background()
+	info, fileIdx, err := m.Prepare(ctx, "magnet:?xt=urn:btih:dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c", -1)
 	if err != nil {
 		t.Skip("No se pudo obtener metadata")
 	}
 
-	// Preparar stream
-	streamInfo, err := sm.PrepareStream(torrent, 0)
-	require.NoError(t, err)
-	assert.NotNil(t, streamInfo)
-	assert.NotNil(t, streamInfo.Reader)
-	assert.NotNil(t, streamInfo.Torrent)
+	assert.NotEmpty(t, info.Name)
+	assert.GreaterOrEqual(t, fileIdx, 0)
+	assert.Greater(t, len(info.Files), 0)
 }
 
-// TestPrepareStream_InvalidFileIndex prueba índice inválido
-func TestPrepareStream_InvalidFileIndex(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping test que requiere red")
-	}
-
+// TestPrepare_InvalidMagnet prueba magnet inválido
+func TestPrepare_InvalidMagnet(t *testing.T) {
 	cfg := config.DefaultConfig()
-	c, err := client.New(cfg)
+	c, err := torrent.New(cfg)
 	require.NoError(t, err)
 	defer c.Close()
 
-	sm := New(c, cfg)
+	m := New(cfg, c)
 
-	magnet := "magnet:?xt=urn:btih:dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c"
-	torrent, err := c.AddMagnet(magnet)
-	require.NoError(t, err)
-
-	err = torrent.WaitForInfo(30 * time.Second)
-	if err != nil {
-		t.Skip("No se pudo obtener metadata")
-	}
-
-	// Índice inválido
-	_, err = sm.PrepareStream(torrent, 999)
+	ctx := context.Background()
+	_, _, err = m.Prepare(ctx, "invalid-magnet", 0)
 	assert.Error(t, err)
 }
 
-// TestCalculateHealth prueba el cálculo de salud
-func TestCalculateHealth(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping test que requiere red")
-	}
-
+// TestProgress retorna progreso inicial correcto
+func TestProgress(t *testing.T) {
 	cfg := config.DefaultConfig()
-	c, err := client.New(cfg)
+	c, err := torrent.New(cfg)
 	require.NoError(t, err)
 	defer c.Close()
 
-	sm := New(c, cfg)
+	m := New(cfg, c)
 
-	magnet := "magnet:?xt=urn:btih:dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c"
-	torrent, err := c.AddMagnet(magnet)
-	require.NoError(t, err)
-
-	err = torrent.WaitForInfo(30 * time.Second)
-	if err != nil {
-		t.Skip("No se pudo obtener metadata")
-	}
-
-	streamInfo, err := sm.PrepareStream(torrent, 0)
-	require.NoError(t, err)
-
-	// Calcular salud
-	health := sm.calculateHealth(streamInfo)
-
-	assert.GreaterOrEqual(t, health.BufferPercent, 0.0)
-	assert.LessOrEqual(t, health.BufferPercent, 100.0)
-	assert.GreaterOrEqual(t, health.Peers, 0)
-	assert.GreaterOrEqual(t, health.PiecesCompleted, 0)
-	assert.Greater(t, health.PiecesTotal, 0)
+	prog := m.Progress()
+	assert.Equal(t, int64(0), prog.HeadWritten)
+	assert.Equal(t, int64(0), prog.TotalSize)
+	assert.Equal(t, 0, prog.Percent)
+	assert.False(t, prog.MoovReady)
 }
 
-// TestStats prueba las estadísticas del stream
-func TestStats(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping test que requiere red")
-	}
+// TestOptions prueba los defaults de Options
+func TestOptions(t *testing.T) {
+	// Default
+	opts := Options{}
+	assert.Equal(t, int64(200*1024*1024), opts.bufferBytes())
+	assert.Equal(t, int64(5*1024*1024), opts.moovBytes())
 
+	// NoBuffer
+	opts = Options{NoBuffer: true}
+	assert.Equal(t, int64(5*1024*1024), opts.bufferBytes())
+
+	// Custom
+	opts = Options{BufferMB: 100, MoovMB: 10}
+	assert.Equal(t, int64(100*1024*1024), opts.bufferBytes())
+	assert.Equal(t, int64(10*1024*1024), opts.moovBytes())
+}
+
+// TestStop_NoStart no debería paniquear si se llama Stop sin Start
+func TestStop_NoStart(t *testing.T) {
 	cfg := config.DefaultConfig()
-	c, err := client.New(cfg)
+	c, err := torrent.New(cfg)
 	require.NoError(t, err)
 	defer c.Close()
 
-	sm := New(c, cfg)
+	m := New(cfg, c)
 
-	magnet := "magnet:?xt=urn:btih:dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c"
-	torrent, err := c.AddMagnet(magnet)
-	require.NoError(t, err)
-
-	err = torrent.WaitForInfo(30 * time.Second)
-	if err != nil {
-		t.Skip("No se pudo obtener metadata")
-	}
-
-	streamInfo, err := sm.PrepareStream(torrent, 0)
-	require.NoError(t, err)
-
-	stats := sm.Stats(streamInfo)
-
-	assert.GreaterOrEqual(t, stats.BytesBuffered, int64(0))
-	assert.GreaterOrEqual(t, stats.Progress, 0.0)
-	assert.GreaterOrEqual(t, stats.Peers, 0)
+	// No debería paniquear
+	assert.NotPanics(t, func() {
+		m.Stop()
+	})
 }
 
-// TestCalculateFilePieces prueba el cálculo de pieces
-func TestCalculateFilePieces(t *testing.T) {
-	cfg := config.DefaultConfig()
-	c, err := client.New(cfg)
-	require.NoError(t, err)
-	defer c.Close()
-
-	sm := New(c, cfg)
-
-	// Crear info mock
-	info := client.TorrentInfo{
-		NumPieces:   100,
-		PieceLength: 1024 * 1024, // 1 MB
-		Files: []client.FileInfo{
-			{Length: 10 * 1024 * 1024}, // 10 MB
-			{Length: 20 * 1024 * 1024}, // 20 MB
-		},
-	}
-
-	// Primer archivo
-	start, end := sm.calculateFilePieces(info, 0)
-	assert.Equal(t, 0, start)
-	assert.GreaterOrEqual(t, end, 9) // 10 MB / 1 MB por piece
-
-	// Segundo archivo
-	start, end = sm.calculateFilePieces(info, 1)
-	assert.GreaterOrEqual(t, start, 10) // Después del primer archivo
-}
-
-// TestStop prueba detener el stream
-func TestStop(t *testing.T) {
-	cfg := config.DefaultConfig()
-	c, err := client.New(cfg)
-	require.NoError(t, err)
-	defer c.Close()
-
-	sm := New(c, cfg)
-
-	magnet := "magnet:?xt=urn:btih:1234567890abcdef1234567890abcdef12345678"
-	torrent, err := c.AddMagnet(magnet)
-	require.NoError(t, err)
-
-	streamInfo := &StreamInfo{
-		Torrent: torrent,
-		IsReady: true,
-	}
-
-	// No debería generar error
-	sm.Stop(streamInfo)
-}
-
-// Ejemplo funcional
+// TestExample verifica configuración de streaming
 func TestExample(t *testing.T) {
 	cfg := config.DefaultConfig()
 	assert.NotNil(t, cfg)
 
-	// Verificar configuración de streaming
 	assert.Greater(t, cfg.Streaming.InitialBufferSize, 0)
 	assert.Greater(t, cfg.Streaming.MinBufferSize, 0)
 	assert.LessOrEqual(t, cfg.Streaming.MinBufferSize, cfg.Streaming.InitialBufferSize)
