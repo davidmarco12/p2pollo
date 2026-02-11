@@ -1,0 +1,138 @@
+package main
+
+import (
+	"context"
+
+	"github.com/davidmarco12/p2pollo/internal/config"
+	"github.com/davidmarco12/p2pollo/internal/scraper"
+	"github.com/davidmarco12/p2pollo/internal/scraper/providers"
+	"github.com/davidmarco12/p2pollo/internal/streaming"
+)
+
+// App estructura principal — puente entre el frontend Svelte y el backend Go.
+// Los métodos exportados se exponen automáticamente al frontend via Wails bindings.
+type App struct {
+	ctx      context.Context
+	cfg      *config.Config
+	streamer *streaming.Service
+	scraper  *scraper.Scraper
+}
+
+// NewApp crea una nueva instancia de la aplicación
+func NewApp() *App {
+	return &App{}
+}
+
+// startup se ejecuta al iniciar la aplicación.
+// Inicializa la configuración, el servicio de streaming y el scraper.
+func (a *App) startup(ctx context.Context) {
+	a.ctx = ctx
+
+	// Cargar configuración
+	cfg, err := config.Load("")
+	if err != nil {
+		cfg = config.DefaultConfig()
+	}
+	a.cfg = cfg
+
+	// Inicializar servicio de streaming
+	streamer, err := streaming.NewService(cfg)
+	if err == nil {
+		a.streamer = streamer
+	}
+
+	// Inicializar scraper con proveedores
+	s := scraper.New()
+	s.RegisterProvider("1337x", providers.NewLeet())
+	a.scraper = s
+}
+
+// shutdown se ejecuta al cerrar la aplicación
+func (a *App) shutdown(ctx context.Context) {
+	if a.streamer != nil {
+		a.streamer.Close()
+	}
+}
+
+// --- Métodos expuestos al frontend (Wails bindings) ---
+
+// SearchResult es la estructura que recibe el frontend
+type SearchResult struct {
+	Name       string `json:"name"`
+	MagnetLink string `json:"magnetLink"`
+	Size       string `json:"size"`
+	Seeds      int    `json:"seeds"`
+	Leechers   int    `json:"leechers"`
+	Source     string `json:"source"`
+	Health     int    `json:"health"`
+}
+
+// Search busca torrents en los proveedores registrados
+func (a *App) Search(query string) ([]SearchResult, error) {
+	results, err := a.scraper.Search(query)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]SearchResult, len(results))
+	for i, r := range results {
+		out[i] = SearchResult{
+			Name:       r.Name,
+			MagnetLink: r.MagnetLink,
+			Size:       r.Size,
+			Seeds:      r.Seeds,
+			Leechers:   r.Leechers,
+			Source:     r.Source,
+			Health:     r.HealthScore(),
+		}
+	}
+	return out, nil
+}
+
+// PlayMagnet inicia el streaming de un magnet link y retorna la URL del stream
+func (a *App) PlayMagnet(magnetLink string) (string, error) {
+	if a.streamer == nil {
+		return "", nil
+	}
+
+	a.streamer.Stop()
+
+	if err := a.streamer.StartStream(magnetLink, -1); err != nil {
+		return "", err
+	}
+
+	return a.streamer.StreamURL(), nil
+}
+
+// StreamProgress representa el progreso de descarga para el frontend
+type StreamProgress struct {
+	HeadWritten int64   `json:"headWritten"`
+	TotalSize   int64   `json:"totalSize"`
+	SpeedMBps   float64 `json:"speedMBps"`
+	Percent     int     `json:"percent"`
+	Peers       int     `json:"peers"`
+}
+
+// GetStreamProgress retorna el progreso actual de la descarga
+func (a *App) GetStreamProgress() StreamProgress {
+	if a.streamer == nil {
+		return StreamProgress{}
+	}
+
+	p := a.streamer.GetProgress()
+	return StreamProgress{
+		HeadWritten: p.HeadWritten,
+		TotalSize:   p.TotalSize,
+		SpeedMBps:   p.SpeedMBps,
+		Percent:     p.Percent,
+		Peers:       p.Peers,
+	}
+}
+
+// StopStream detiene el streaming actual
+func (a *App) StopStream() error {
+	if a.streamer == nil {
+		return nil
+	}
+	return a.streamer.Stop()
+}

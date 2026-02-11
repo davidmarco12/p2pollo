@@ -1,27 +1,29 @@
-# Binaries for programs and plugins
+# Binaries
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
-
-# Test binary, built with `go test -c`
 *.test
 
-# Output of the go coverage tool
+# Go
 *.out
 coverage.txt
 coverage.html
-
-# Go workspace file
 go.work
+vendor/
 
-# Build directories
+# Build
 /bin/
 /dist/
-/build/
+build/bin/
 
-# IDE specific files
+# Wails
+frontend/node_modules/
+frontend/dist/
+frontend/wailsjs/
+
+# IDE
 .idea/
 .vscode/
 *.swp
@@ -29,7 +31,7 @@ go.work
 *~
 .DS_Store
 
-# Config files with sensitive data
+# Config sensible
 config/local.yaml
 config/secrets.yaml
 *.env
@@ -38,19 +40,15 @@ config/secrets.yaml
 *.log
 logs/
 
-# Temporary files
+# Temp / Cache
 tmp/
 temp/
 *.tmp
-
-# Downloaded torrents and cache
 downloads/
 cache/
 .torrent-cache/
 
-# Debug files
+# Debug
 debug
 __debug_bin
-
-# Dependency directories
-vendor/
+nul
