@@ -1,0 +1,16 @@
+# Magnet links de prueba
+# Estos son magnet links de contenido público y legal
+
+# Big Buck Bunny (Creative Commons)
+big_buck_bunny: "magnet:?xt=urn:btih:dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c&dn=Big+Buck+Bunny"
+
+# Sintel (Creative Commons)  
+sintel: "magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10&dn=Sintel"
+
+# Ubuntu ISO (para tests de gran tamaño)
+ubuntu: "magnet:?xt=urn:btih:e4b7b6c3f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1&dn=ubuntu"
+
+# Notas:
+# - Estos magnet links son solo para propósitos de testing
+# - Big Buck Bunny y Sintel son películas con licencia Creative Commons
+# - En tests reales, usar torrents pequeños o mocks
