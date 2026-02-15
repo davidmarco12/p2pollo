@@ -15,6 +15,10 @@
     }
   }
 
+  function handleHome() {
+    dispatch('home')
+  }
+
   function handleKeydown(e) {
     if (e.key === 'Enter') handleSearch()
   }
@@ -22,7 +26,7 @@
 
 <div class="search-bar">
   <div class="search-container">
-    <h1 class="logo">p2pollo</h1>
+    <h1 class="logo" on:click={handleHome}>p2pollo</h1>
     <div class="input-row">
       <input
         type="text"
@@ -55,6 +59,8 @@
     color: #ff6b35;
     margin-bottom: 12px;
     letter-spacing: -0.5px;
+    cursor: pointer;
+    user-select: none;
   }
 
   .input-row {

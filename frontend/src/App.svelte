@@ -1,27 +1,46 @@
 <script>
+  import { onMount } from 'svelte'
   import SearchBar from './components/SearchBar.svelte'
-  import ResultsTable from './components/ResultsTable.svelte'
+  import MovieGrid from './components/MovieGrid.svelte'
+  import MovieDetail from './components/MovieDetail.svelte'
   import Player from './components/Player.svelte'
-  import { Search, PlayMagnet, StopStream } from '../wailsjs/go/main/App.js'
+  import { Search, PlayMagnet, StopStream, GetPopularMovies, SearchMovies } from '../wailsjs/go/main/App.js'
 
   // Estado de la app
-  let view = 'search'   // 'search' | 'player'
-  let results = []
+  let view = 'home'   // 'home' | 'search' | 'detail' | 'player'
+  let movies = []
+  let selectedMovie = null
+  let torrentResults = []
+  let detailLoading = false
   let loading = false
   let error = ''
   let currentName = ''
   let currentSize = ''
 
+  // Cargar peliculas populares al inicio
+  onMount(async () => {
+    loading = true
+    try {
+      const res = await GetPopularMovies()
+      movies = res || []
+    } catch (e) {
+      error = typeof e === 'string' ? e : (e.message || JSON.stringify(e))
+    } finally {
+      loading = false
+    }
+  })
+
   async function handleSearch(event) {
     const query = event.detail
     loading = true
     error = ''
-    results = []
+    movies = []
 
     try {
-      const res = await Search(query)
-      results = res || []
-      if (results.length === 0) {
+      const res = await SearchMovies(query)
+      movies = res || []
+      view = 'search'
+      if (movies.length === 0) {
         error = 'No se encontraron resultados'
       }
     } catch (e) {
@@ -31,7 +50,44 @@
     }
   }
 
-  async function handlePlay(event) {
+  async function handleHome() {
+    view = 'home'
+    error = ''
+    selectedMovie = null
+    torrentResults = []
+    loading = true
+    movies = []
+
+    try {
+      const res = await GetPopularMovies()
+      movies = res || []
+    } catch (e) {
+      error = typeof e === 'string' ? e : (e.message || JSON.stringify(e))
+    } finally {
+      loading = false
+    }
+  }
+
+  async function handleSelectMovie(event) {
+    selectedMovie = event.detail
+    torrentResults = []
+    detailLoading = true
+    view = 'detail'
+    error = ''
+
+    try {
+      // Buscar torrents en rargb usando el titulo de la pelicula
+      const searchQuery = `${selectedMovie.title} ${selectedMovie.year}`
+      const res = await Search(searchQuery)
+      torrentResults = res || []
+    } catch (e) {
+      error = typeof e === 'string' ? e : (e.message || JSON.stringify(e))
+    } finally {
+      detailLoading = false
+    }
+  }
+
+  async function handlePlayTorrent(event) {
     const result = event.detail
     currentName = result.name
     currentSize = result.size
@@ -42,8 +98,15 @@
       await PlayMagnet(result.magnetLink)
     } catch (e) {
       error = typeof e === 'string' ? e : (e.message || JSON.stringify(e))
-      view = 'search'
+      view = 'detail'
     }
+  }
+
+  function handleBackFromDetail() {
+    view = movies.length > 0 ? 'search' : 'home'
+    selectedMovie = null
+    torrentResults = []
+    error = ''
   }
 
   async function handleClosePlayer() {
@@ -54,25 +117,38 @@
     }
     currentName = ''
     currentSize = ''
-    view = 'search'
+    view = selectedMovie ? 'detail' : 'home'
   }
 </script>
 
-{#if view === 'search'}
-  <SearchBar on:search={handleSearch} {loading} />
+{#if view === 'home' || view === 'search'}
+  <SearchBar on:search={handleSearch} on:home={handleHome} {loading} />
 
   {#if error}
     <div class="message error">{error}</div>
   {/if}
 
-  {#if !loading && results.length === 0 && !error}
-    <div class="empty-state">
-      <div class="empty-icon">&#127871;</div>
-      <p>Busca una pelicula o serie para empezar</p>
-    </div>
+  <MovieGrid
+    {movies}
+    {loading}
+    title={view === 'home' ? 'Peliculas Populares' : `${movies.length} resultados`}
+    on:select={handleSelectMovie}
+  />
+
+{:else if view === 'detail'}
+  <SearchBar on:search={handleSearch} on:home={handleHome} loading={false} />
+
+  {#if error}
+    <div class="message error">{error}</div>
   {/if}
 
-  <ResultsTable {results} on:play={handlePlay} />
+  <MovieDetail
+    movie={selectedMovie}
+    results={torrentResults}
+    loading={detailLoading}
+    on:play={handlePlayTorrent}
+    on:back={handleBackFromDetail}
+  />
 
 {:else if view === 'player'}
   <Player
@@ -92,24 +168,5 @@
     color: #f44336;
     background: #1a0000;
     border-bottom: 1px solid #2a1a1a;
-  }
-
-  .empty-state {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    color: #444;
-    gap: 8px;
-    padding-top: 120px;
-  }
-
-  .empty-icon {
-    font-size: 3rem;
-  }
-
-  .empty-state p {
-    font-size: 1rem;
   }
 </style>

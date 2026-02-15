@@ -20,7 +20,14 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(git clone:*)",
       "WebFetch(domain:rargb.to)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "WebFetch(domain:yts-official.org)",
+      "WebFetch(domain:yts.mx)",
+      "WebFetch(domain:en.yts-official.org)",
+      "WebFetch(domain:yts.torrentbay.to)",
+      "Bash(python -m json.tool:*)",
+      "Bash(python:*)",
+      "Bash(npm run build:*)"
     ]
   }
 }

@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 
+	"github.com/davidmarco12/p2pollo/internal/catalog"
+	"github.com/davidmarco12/p2pollo/internal/catalog/yts"
 	"github.com/davidmarco12/p2pollo/internal/config"
 	"github.com/davidmarco12/p2pollo/internal/scraper"
 	"github.com/davidmarco12/p2pollo/internal/scraper/providers"
@@ -16,6 +18,7 @@ type App struct {
 	cfg      *config.Config
 	streamer *streaming.Service
 	scraper  *scraper.Scraper
+	catalog  catalog.CatalogProvider
 }
 
 // NewApp crea una nueva instancia de la aplicación
@@ -45,6 +48,9 @@ func (a *App) startup(ctx context.Context) {
 	s := scraper.New()
 	s.RegisterProvider("rargb", providers.NewRargb())
 	a.scraper = s
+
+	// Inicializar catalogo YTS
+	a.catalog = yts.New(cfg.Trackers)
 }
 
 // shutdown se ejecuta al cerrar la aplicación
@@ -145,4 +151,61 @@ func (a *App) StopStream() error {
 		return nil
 	}
 	return a.streamer.Stop()
+}
+
+// --- Métodos del catálogo de películas (YTS) ---
+
+// MovieCard es la estructura que recibe el frontend para la grilla de peliculas
+type MovieCard struct {
+	ID        string  `json:"id"`
+	ImdbID    string  `json:"imdbId"`
+	Title     string  `json:"title"`
+	Year      int     `json:"year"`
+	Rating    float64 `json:"rating"`
+	PosterURL string  `json:"posterUrl"`
+	Genres    string  `json:"genres"`
+}
+
+// GetPopularMovies retorna peliculas populares para la pagina de inicio
+func (a *App) GetPopularMovies() ([]MovieCard, error) {
+	if a.catalog == nil {
+		return nil, nil
+	}
+
+	movies, err := a.catalog.Popular(1)
+	if err != nil {
+		return nil, err
+	}
+
+	return moviesToCards(movies), nil
+}
+
+// SearchMovies busca peliculas por titulo
+func (a *App) SearchMovies(query string) ([]MovieCard, error) {
+	if a.catalog == nil {
+		return nil, nil
+	}
+
+	movies, err := a.catalog.Search(query, 1)
+	if err != nil {
+		return nil, err
+	}
+
+	return moviesToCards(movies), nil
+}
+
+func moviesToCards(movies []catalog.Movie) []MovieCard {
+	cards := make([]MovieCard, len(movies))
+	for i, m := range movies {
+		cards[i] = MovieCard{
+			ID:        m.ID,
+			ImdbID:    m.ImdbID,
+			Title:     m.Title,
+			Year:      m.Year,
+			Rating:    m.Rating,
+			PosterURL: m.PosterURL,
+			Genres:    m.Genres,
+		}
+	}
+	return cards
 }
