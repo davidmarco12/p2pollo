@@ -43,7 +43,7 @@ func (a *App) startup(ctx context.Context) {
 
 	// Inicializar scraper con proveedores
 	s := scraper.New()
-	s.RegisterProvider("1337x", providers.NewLeet())
+	s.RegisterProvider("rargb", providers.NewRargb())
 	a.scraper = s
 }
 
@@ -89,31 +89,35 @@ func (a *App) Search(query string) ([]SearchResult, error) {
 	return out, nil
 }
 
-// PlayMagnet inicia el streaming de un magnet link y retorna la URL del stream
-func (a *App) PlayMagnet(magnetLink string) (string, error) {
+// PlayMagnet inicia el streaming de un magnet link de forma asíncrona.
+// El progreso y la URL del stream se obtienen via GetStreamProgress().
+func (a *App) PlayMagnet(magnetLink string) error {
 	if a.streamer == nil {
-		return "", nil
+		return nil
 	}
 
 	a.streamer.Stop()
-
-	if err := a.streamer.StartStream(magnetLink, -1); err != nil {
-		return "", err
-	}
-
-	return a.streamer.StreamURL(), nil
+	a.streamer.StartStreamAsync(magnetLink, -1)
+	return nil
 }
 
 // StreamProgress representa el progreso de descarga para el frontend
 type StreamProgress struct {
-	HeadWritten int64   `json:"headWritten"`
-	TotalSize   int64   `json:"totalSize"`
-	SpeedMBps   float64 `json:"speedMBps"`
-	Percent     int     `json:"percent"`
-	Peers       int     `json:"peers"`
+	StreamURL       string  `json:"streamURL"`
+	Preparing       bool    `json:"preparing"`
+	Error           string  `json:"error"`
+	FileExt         string  `json:"fileExt"`
+	HeadWritten     int64   `json:"headWritten"`
+	TotalSize       int64   `json:"totalSize"`
+	SpeedMBps       float64 `json:"speedMBps"`
+	Percent         int     `json:"percent"`
+	Peers           int     `json:"peers"`
+	CanSeekNatively bool    `json:"canSeekNatively"`
+	VideoDuration   float64 `json:"videoDuration"`
 }
 
-// GetStreamProgress retorna el progreso actual de la descarga
+// GetStreamProgress retorna el progreso actual de la descarga,
+// incluyendo la URL del stream cuando esté disponible.
 func (a *App) GetStreamProgress() StreamProgress {
 	if a.streamer == nil {
 		return StreamProgress{}
@@ -121,11 +125,17 @@ func (a *App) GetStreamProgress() StreamProgress {
 
 	p := a.streamer.GetProgress()
 	return StreamProgress{
-		HeadWritten: p.HeadWritten,
-		TotalSize:   p.TotalSize,
-		SpeedMBps:   p.SpeedMBps,
-		Percent:     p.Percent,
-		Peers:       p.Peers,
+		StreamURL:       a.streamer.StreamURL(),
+		Preparing:       a.streamer.IsPreparing(),
+		Error:           a.streamer.StreamError(),
+		FileExt:         a.streamer.FileExt(),
+		HeadWritten:     p.HeadWritten,
+		TotalSize:       p.TotalSize,
+		SpeedMBps:       p.SpeedMBps,
+		Percent:         p.Percent,
+		Peers:           p.Peers,
+		CanSeekNatively: a.streamer.CanSeekNatively(),
+		VideoDuration:   a.streamer.VideoDuration(),
 	}
 }
 

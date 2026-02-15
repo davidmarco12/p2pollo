@@ -65,7 +65,14 @@ type LoggingConfig struct {
 
 // DefaultConfig retorna una configuración con valores por defecto
 func DefaultConfig() *Config {
-	homeDir, _ := os.UserHomeDir()
+	// Usar directorio del ejecutable como base para cache y logs
+	exePath, err := os.Executable()
+	var baseDir string
+	if err == nil {
+		baseDir = filepath.Dir(exePath)
+	} else {
+		baseDir, _ = os.Getwd()
+	}
 
 	return &Config{
 		Trackers: []string{
@@ -88,8 +95,8 @@ func DefaultConfig() *Config {
 			},
 		},
 		Streaming: StreamingConfig{
-			InitialBufferSize:  10,
-			MinBufferSize:      5,
+			InitialBufferSize:  5,
+			MinBufferSize:      2,
 			SequentialDownload: true,
 			ReadaheadPieces:    50,
 		},
@@ -98,9 +105,9 @@ func DefaultConfig() *Config {
 			SearchTimeout:        30,
 		},
 		Paths: PathsConfig{
-			CacheDir:   filepath.Join(homeDir, ".cache", "p2pollo"),
-			LogDir:     filepath.Join(homeDir, ".local", "share", "p2pollo", "logs"),
-			ConfigFile: filepath.Join(homeDir, ".config", "p2pollo", "config.yaml"),
+			CacheDir:   filepath.Join(baseDir, ".cache"),
+			LogDir:     filepath.Join(baseDir, ".logs"),
+			ConfigFile: filepath.Join(baseDir, "config.yaml"),
 		},
 		Logging: LoggingConfig{
 			Level:       "info",

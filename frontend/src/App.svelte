@@ -1,79 +1,115 @@
 <script>
-  import logo from './assets/images/logo-universal.png'
-  import {Greet} from '../wailsjs/go/main/App.js'
+  import SearchBar from './components/SearchBar.svelte'
+  import ResultsTable from './components/ResultsTable.svelte'
+  import Player from './components/Player.svelte'
+  import { Search, PlayMagnet, StopStream } from '../wailsjs/go/main/App.js'
 
-  let resultText = "Please enter your name below 👇"
-  let name
+  // Estado de la app
+  let view = 'search'   // 'search' | 'player'
+  let results = []
+  let loading = false
+  let error = ''
+  let currentName = ''
+  let currentSize = ''
 
-  function greet() {
-    Greet(name).then(result => resultText = result)
+  async function handleSearch(event) {
+    const query = event.detail
+    loading = true
+    error = ''
+    results = []
+
+    try {
+      const res = await Search(query)
+      results = res || []
+      if (results.length === 0) {
+        error = 'No se encontraron resultados'
+      }
+    } catch (e) {
+      error = typeof e === 'string' ? e : (e.message || JSON.stringify(e))
+    } finally {
+      loading = false
+    }
+  }
+
+  async function handlePlay(event) {
+    const result = event.detail
+    currentName = result.name
+    currentSize = result.size
+    view = 'player'
+    error = ''
+
+    try {
+      await PlayMagnet(result.magnetLink)
+    } catch (e) {
+      error = typeof e === 'string' ? e : (e.message || JSON.stringify(e))
+      view = 'search'
+    }
+  }
+
+  async function handleClosePlayer() {
+    try {
+      await StopStream()
+    } catch (e) {
+      // ignorar
+    }
+    currentName = ''
+    currentSize = ''
+    view = 'search'
   }
 </script>
 
-<main>
-  <img alt="Wails logo" id="logo" src="{logo}">
-  <div class="result" id="result">{resultText}</div>
-  <div class="input-box" id="input">
-    <input autocomplete="off" bind:value={name} class="input" id="name" type="text"/>
-    <button class="btn" on:click={greet}>Greet</button>
-  </div>
-</main>
+{#if view === 'search'}
+  <SearchBar on:search={handleSearch} {loading} />
+
+  {#if error}
+    <div class="message error">{error}</div>
+  {/if}
+
+  {#if !loading && results.length === 0 && !error}
+    <div class="empty-state">
+      <div class="empty-icon">&#127871;</div>
+      <p>Busca una pelicula o serie para empezar</p>
+    </div>
+  {/if}
+
+  <ResultsTable {results} on:play={handlePlay} />
+
+{:else if view === 'player'}
+  <Player
+    torrentName={currentName}
+    torrentSize={currentSize}
+    on:close={handleClosePlayer}
+  />
+{/if}
 
 <style>
-
-  #logo {
-    display: block;
-    width: 50%;
-    height: 50%;
-    margin: auto;
-    padding: 10% 0 0;
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: 100% 100%;
-    background-origin: content-box;
+  .message {
+    padding: 12px 24px;
+    font-size: 0.9rem;
   }
 
-  .result {
-    height: 20px;
-    line-height: 20px;
-    margin: 1.5rem auto;
+  .error {
+    color: #f44336;
+    background: #1a0000;
+    border-bottom: 1px solid #2a1a1a;
   }
 
-  .input-box .btn {
-    width: 60px;
-    height: 30px;
-    line-height: 30px;
-    border-radius: 3px;
-    border: none;
-    margin: 0 0 0 20px;
-    padding: 0 8px;
-    cursor: pointer;
+  .empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: #444;
+    gap: 8px;
+    padding-top: 120px;
   }
 
-  .input-box .btn:hover {
-    background-image: linear-gradient(to top, #cfd9df 0%, #e2ebf0 100%);
-    color: #333333;
+  .empty-icon {
+    font-size: 3rem;
   }
 
-  .input-box .input {
-    border: none;
-    border-radius: 3px;
-    outline: none;
-    height: 30px;
-    line-height: 30px;
-    padding: 0 10px;
-    background-color: rgba(240, 240, 240, 1);
-    -webkit-font-smoothing: antialiased;
+  .empty-state p {
+    font-size: 1rem;
   }
-
-  .input-box .input:hover {
-    border: none;
-    background-color: rgba(255, 255, 255, 1);
-  }
-
-  .input-box .input:focus {
-    border: none;
-    background-color: rgba(255, 255, 255, 1);
-  }
-
 </style>
