@@ -32,3 +32,20 @@ func IsVideoFile(path string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
 	return videoExtensions[ext]
 }
+
+// subtitleExtensions contiene las extensiones de archivos de subtítulos soportadas.
+var subtitleExtensions = map[string]bool{
+	".srt": true, ".sub": true, ".ass": true, ".ssa": true, ".vtt": true,
+}
+
+// FindSubtitleFiles retorna los índices de archivos de subtítulos en la lista.
+func FindSubtitleFiles(files []FileInfo) []int {
+	var indices []int
+	for i, f := range files {
+		ext := strings.ToLower(filepath.Ext(f.Path))
+		if subtitleExtensions[ext] {
+			indices = append(indices, i)
+		}
+	}
+	return indices
+}

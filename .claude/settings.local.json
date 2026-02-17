@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go build:*)",
+      "Bash(dir:*)",
+      "Bash(go doc:*)",
+      "Bash(go env:*)",
+      "Bash(wails version:*)",
+      "Bash(node --version:*)",
+      "Bash(npm --version:*)",
+      "Bash(go install:*)",
+      "Read(//tmp/p2pollo-wails/**)",
+      "Bash(go get:*)",
+      "Bash(go mod tidy:*)",
+      "Bash(npm install:*)",
+      "Bash(go vet:*)",
+      "WebFetch(domain:1337x.to)",
+      "Bash(go run:*)",
+      "WebFetch(domain:api.github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(git clone:*)",
+      "WebFetch(domain:rargb.to)",
+      "Bash(curl:*)",
+      "WebFetch(domain:yts-official.org)",
+      "WebFetch(domain:yts.mx)",
+      "WebFetch(domain:en.yts-official.org)",
+      "WebFetch(domain:yts.torrentbay.to)",
+      "Bash(python -m json.tool:*)",
+      "Bash(python:*)",
+      "Bash(npm run build:*)"
+    ]
+  }
+}

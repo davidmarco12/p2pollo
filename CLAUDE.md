@@ -4,78 +4,75 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-p2pollo is a P2P streaming client written in Go. It uses BitTorrent (via anacrolix/torrent) to download and stream media content. The project is primarily developed on Windows.
-
-**Current state:** CLI-based with mpv as external player.
-**Direction:** Migrating to a GUI desktop application with an embedded video player (libVLC) and a built-in web scraper for torrent search.
+p2pollo is a P2P streaming desktop application written in Go with Wails (Go backend + Svelte frontend). It uses BitTorrent (via anacrolix/torrent) to download and stream media content, with a built-in web scraper for torrent search. The project is primarily developed on Windows.
 
 ### Roadmap
-- **GUI:** Replace the CLI with a Wails desktop application (Go backend + web frontend via native webview).
-- **Embedded player:** Replace mpv with an HTML5 `<video>` element fed by a local HTTP server that streams torrent content — no external player dependencies.
-- **Scraper:** Built-in web scraper to search torrents directly from sites like 1337x, Nyaa.si, and RARBG (rarg.to), replacing the current tracker-based search.
+- **Scraper:** Implementar el parseo HTTP real de 1337x, Nyaa.si y rarg.to (actualmente stub).
+- **Frontend:** Construir la UI de búsqueda, resultados y reproductor en Svelte.
 
 ## Build & Development Commands
 
 ```bash
-# Build
-make build              # Compiles to bin/p2pollo (NOTE: Makefile targets ./cmd/main.go but entry point is ./main.go — may need fixing)
-go build -o bin/p2pollo .  # Direct build from root
+# Wails development (hot-reload)
+wails dev                # Runs app in dev mode with hot-reload
 
-# Run
-make run                # go run ./cmd/main.go
-go run .                # Run from root main.go
+# Wails build (production)
+wails build              # Compiles to build/bin/p2pollo.exe
 
 # Test
-make test               # go test -v ./...
-go test -v ./...        # Run all tests
-go test -v ./internal/client/  # Run tests for a specific package
-go test -short ./...    # Skip network-dependent tests
-
-# Coverage
-make coverage           # Generates coverage.txt and coverage.html
+go test -v ./...         # Run all tests
+go test -short ./...     # Skip network-dependent tests
 
 # Lint & Format
-make lint               # Runs golangci-lint (installs if missing)
-make fmt                # gofmt -s -w
-make vet                # go vet ./...
+make lint                # Runs golangci-lint (installs if missing)
+make fmt                 # gofmt -s -w
+make vet                 # go vet ./...
 
 # Dependencies
-make deps               # go mod download && go mod tidy
-
-# Cross-compile
-make build-all          # Builds for linux/amd64, darwin/amd64, darwin/arm64, windows/amd64
+go mod tidy              # Tidy Go modules
+cd frontend && npm install  # Install frontend dependencies
 ```
 
 ## Architecture
 
 ```
-main.go                  Entry point — delegates to cmd.Execute()
-cmd/                     Cobra CLI commands
-  root.go                Root command, global flags (--verbose, --profile, --config), pprof setup
-  play.go                `p2pollo play <magnet>` — streams a torrent via mpv
-  search.go              `p2pollo search <query>` — searches torrents across trackers
-  config.go              `p2pollo config` — configuration management
+main.go                  Wails entry point — embeds frontend, configures window, binds App
+app.go                   App struct — puente entre frontend y backend (Wails bindings)
+wails.json               Wails project configuration
+frontend/                Svelte + Vite frontend
+  src/                   Svelte components and pages
+  wailsjs/               Auto-generated JS bindings to call Go methods
+  dist/                  Built frontend assets (embedded into binary)
+build/                   Build assets (icons, manifests)
 internal/
-  client/                Wrapper around anacrolix/torrent — manages P2P connections, readers, piece prioritization
-  config/                YAML config loading from ~/.config/p2pollo/config.yaml, defaults via Viper
-  player/                mpv integration — supports file-based and stdin pipe streaming
-  search/                Torrent search across multiple trackers with caching and filtering
-  stream/                Stream manager — buffer monitoring, piece prioritization for sequential playback
+  streaming/             Servicio de streaming — combina torrent client + HTTP server local
+  scraper/               Orquestador de búsqueda en sitios de torrents
+    providers/           Implementaciones por sitio (1337x, Nyaa.si, rarg.to)
+  torrent/               Cliente BitTorrent (wrapper anacrolix/torrent, storage sin mmap, file selection)
+  stream/                Stream manager — buffer, piece prioritization, descarga secuencial
+  config/                YAML config desde ~/.config/p2pollo/config.yaml, defaults via Viper
+  player/                (legacy) mpv integration
+  search/                (legacy) Búsqueda por trackers
+cmd/                     (legacy) Cobra CLI commands
 ```
 
-**Data flow (current):** CLI command → Client (BitTorrent) → Torrent reader → temp file or stdin pipe → mpv player
-**Data flow (planned):** Wails GUI → Scraper (1337x/Nyaa.si/rarg.to) → Client (BitTorrent) → Torrent reader → Local HTTP server → HTML5 `<video>` player
+**Data flow:** Svelte UI → Wails binding (app.go) → Scraper (1337x/Nyaa.si/rarg.to) → resultados al frontend → usuario elige → Streaming Service (torrent client + HTTP server) → HTML5 `<video>` player
 
-The `play` command has two modes:
-- **Default:** Downloads to a temp file in `~/.cache/p2pollo/temp/`, launches mpv once buffer threshold is met
-- **Pipe mode** (`--pipe`): Streams directly from torrent reader to mpv's stdin (experimental, no disk usage)
+### Wails Bindings (app.go)
+
+Los métodos exportados de `App` se exponen automáticamente al frontend:
+- `Search(query)` → busca en todos los providers del scraper
+- `PlayMagnet(magnetLink)` → inicia streaming y retorna URL local del video
+- `GetStreamProgress()` → retorna progreso de descarga (bytes, velocidad, peers)
+- `StopStream()` → detiene el streaming actual
 
 ## Key Dependencies
 
+- `wailsapp/wails/v2` — Desktop GUI framework (Go + webview)
 - `anacrolix/torrent` — BitTorrent protocol implementation
-- `spf13/cobra` + `spf13/viper` — CLI framework and configuration
+- `svelte` + `vite` — Frontend framework and build tool
+- `spf13/viper` — Configuration management
 - `sirupsen/logrus` — Structured logging
-- `fatih/color` + `schollz/progressbar` — Terminal UI
 - `stretchr/testify` — Test assertions
 
 ## Configuration

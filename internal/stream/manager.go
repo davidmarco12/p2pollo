@@ -283,6 +283,37 @@ func (m *Manager) Cleanup() {
 	}
 }
 
+// TorrentFiles retorna la lista de archivos del torrent activo.
+func (m *Manager) TorrentFiles() []torrent.FileInfo {
+	return m.info.Files
+}
+
+// ReadFile lee el contenido completo de un archivo del torrent por su índice.
+// Bloquea hasta que las piezas del archivo estén descargadas.
+func (m *Manager) ReadFile(fileIndex int) ([]byte, error) {
+	if m.t == nil {
+		return nil, fmt.Errorf("torrent no inicializado")
+	}
+	if fileIndex < 0 || fileIndex >= len(m.info.Files) {
+		return nil, fmt.Errorf("índice de archivo inválido: %d", fileIndex)
+	}
+
+	reader, err := m.t.NewFileReader(fileIndex)
+	if err != nil {
+		return nil, fmt.Errorf("error creando reader: %w", err)
+	}
+	if closer, ok := reader.(io.Closer); ok {
+		defer closer.Close()
+	}
+
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, fmt.Errorf("error leyendo archivo: %w", err)
+	}
+
+	return data, nil
+}
+
 // --- métodos internos ---
 
 func (m *Manager) createTempFile() error {
