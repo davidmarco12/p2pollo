@@ -7,7 +7,6 @@ import (
 	"sync"
 )
 
-// Result representa un resultado de scraping de un sitio de torrents
 type Result struct {
 	Name       string // Nombre del torrent
 	MagnetLink string // Enlace magnet
