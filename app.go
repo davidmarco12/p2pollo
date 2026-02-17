@@ -153,6 +153,35 @@ func (a *App) StopStream() error {
 	return a.streamer.Stop()
 }
 
+// SubtitleTrackInfo es la estructura que recibe el frontend para los subtítulos
+type SubtitleTrackInfo struct {
+	Index    int    `json:"index"`
+	Language string `json:"language"`
+	Title    string `json:"title"`
+	Type     string `json:"type"`
+	FileName string `json:"fileName,omitempty"`
+}
+
+// GetSubtitleTracks retorna los tracks de subtítulos disponibles del stream activo
+func (a *App) GetSubtitleTracks() []SubtitleTrackInfo {
+	if a.streamer == nil {
+		return nil
+	}
+
+	tracks := a.streamer.GetSubtitleTracks()
+	out := make([]SubtitleTrackInfo, len(tracks))
+	for i, t := range tracks {
+		out[i] = SubtitleTrackInfo{
+			Index:    t.Index,
+			Language: t.Language,
+			Title:    t.Title,
+			Type:     t.Type,
+			FileName: t.FileName,
+		}
+	}
+	return out
+}
+
 // --- Métodos del catálogo de películas (YTS) ---
 
 // MovieCard es la estructura que recibe el frontend para la grilla de peliculas

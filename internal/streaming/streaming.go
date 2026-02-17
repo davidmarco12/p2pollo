@@ -5,6 +5,7 @@ package streaming
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -31,6 +32,15 @@ var webSafeVideoCodecs = map[string]bool{
 	"av1":  true,
 }
 
+// SubtitleTrack representa un track de subtítulos disponible (embebido o externo).
+type SubtitleTrack struct {
+	Index    int    `json:"index"`
+	Language string `json:"language"`
+	Title    string `json:"title"`
+	Type     string `json:"type"` // "embedded" o "external"
+	FileName string `json:"fileName,omitempty"`
+}
+
 // Service coordina el cliente torrent, el stream manager y un servidor HTTP
 // para servir el contenido descargado al frontend.
 type Service struct {
@@ -53,6 +63,9 @@ type Service struct {
 	videoCodec      string
 	videoDuration   float64
 	canSeekNatively bool
+
+	// Subtítulos detectados
+	subtitleTracks []SubtitleTrack
 
 	// Estado async
 	preparing     bool
@@ -162,6 +175,13 @@ func (s *Service) startStreamInternal(ctx context.Context, magnetURI string, fil
 		s.mu.Unlock()
 
 		s.log.Infof("Video: codec=%s duration=%.1fs nativeSeek=%v", videoCodec, videoDuration, canSeekNatively)
+
+		// Detectar subtítulos disponibles
+		tracks := s.detectSubtitleTracks(tmpPath)
+		s.mu.Lock()
+		s.subtitleTracks = tracks
+		s.mu.Unlock()
+		s.log.Infof("Subtítulos detectados: %d tracks", len(tracks))
 	case <-ctx.Done():
 		mgr.Stop()
 		return fmt.Errorf("streaming cancelado")
@@ -272,6 +292,7 @@ func (s *Service) Stop() error {
 	s.videoCodec = ""
 	s.videoDuration = 0
 	s.canSeekNatively = false
+	s.subtitleTracks = nil
 	s.mu.Unlock()
 
 	// Detener servidor HTTP (fuera del lock)
@@ -496,9 +517,126 @@ func (s *Service) probeVideoDuration(path string) float64 {
 	return d
 }
 
-// handleSubtitles extrae el primer track de subtítulos del archivo usando ffmpeg
-// y lo sirve como WebVTT (formato compatible con HTML5 <track>).
+// GetSubtitleTracks retorna los tracks de subtítulos detectados.
+func (s *Service) GetSubtitleTracks() []SubtitleTrack {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.subtitleTracks
+}
+
+// detectSubtitleTracks detecta subtítulos embebidos (ffprobe) y externos (.srt del torrent).
+func (s *Service) detectSubtitleTracks(videoPath string) []SubtitleTrack {
+	var tracks []SubtitleTrack
+
+	// 1. Embebidos via ffprobe
+	tracks = append(tracks, s.probeEmbeddedSubtitles(videoPath)...)
+
+	// 2. Externos del torrent (.srt, .ass, etc)
+	s.mu.RLock()
+	info := s.torrentInfo
+	s.mu.RUnlock()
+
+	subtitleIndices := torrent.FindSubtitleFiles(info.Files)
+	for _, idx := range subtitleIndices {
+		f := info.Files[idx]
+		name := filepath.Base(f.Path)
+		tracks = append(tracks, SubtitleTrack{
+			Index:    idx,
+			Language: guessLanguageFromFilename(name),
+			Title:    name,
+			Type:     "external",
+			FileName: f.Path,
+		})
+	}
+
+	return tracks
+}
+
+// probeEmbeddedSubtitles usa ffprobe para listar los tracks de subtítulos embebidos.
+func (s *Service) probeEmbeddedSubtitles(path string) []SubtitleTrack {
+	ffprobePath, err := exec.LookPath("ffprobe")
+	if err != nil {
+		return nil
+	}
+
+	cmd := exec.Command(ffprobePath,
+		"-v", "quiet",
+		"-select_streams", "s",
+		"-show_entries", "stream=index:stream_tags=language,title",
+		"-of", "json",
+		path,
+	)
+
+	output, err := cmd.Output()
+	if err != nil {
+		s.log.Debugf("ffprobe subtitles error: %v", err)
+		return nil
+	}
+
+	var result struct {
+		Streams []struct {
+			Index int `json:"index"`
+			Tags  struct {
+				Language string `json:"language"`
+				Title    string `json:"title"`
+			} `json:"tags"`
+		} `json:"streams"`
+	}
+
+	if err := json.Unmarshal(output, &result); err != nil {
+		s.log.Debugf("ffprobe JSON parse error: %v", err)
+		return nil
+	}
+
+	var tracks []SubtitleTrack
+	for i, stream := range result.Streams {
+		lang := stream.Tags.Language
+		if lang == "" {
+			lang = "und"
+		}
+		title := stream.Tags.Title
+		if title == "" {
+			title = fmt.Sprintf("Track %d (%s)", i+1, lang)
+		}
+		tracks = append(tracks, SubtitleTrack{
+			Index:    i,
+			Language: lang,
+			Title:    title,
+			Type:     "embedded",
+		})
+	}
+
+	return tracks
+}
+
+// handleSubtitles sirve un track de subtítulos como WebVTT.
+// Query params: type=embedded|external, index=N, t=<seekOffset>
 func (s *Service) handleSubtitles(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	q := r.URL.Query()
+	trackType := q.Get("type")
+	index, _ := strconv.Atoi(q.Get("index"))
+	seekOffset, _ := strconv.ParseFloat(q.Get("t"), 64)
+
+	if trackType == "external" {
+		s.serveExternalSubtitle(w, r, index, seekOffset)
+		return
+	}
+
+	// Default: embedded
+	s.serveEmbeddedSubtitle(w, r, index, seekOffset)
+}
+
+// serveEmbeddedSubtitle extrae un track de subtítulos embebido via ffmpeg.
+// seekOffset: segundos desde donde se está reproduciendo el video (para re-sincronizar).
+func (s *Service) serveEmbeddedSubtitle(w http.ResponseWriter, r *http.Request, streamIndex int, seekOffset float64) {
 	s.mu.RLock()
 	tmpPath := s.tmpPath
 	s.mu.RUnlock()
@@ -508,30 +646,23 @@ func (s *Service) handleSubtitles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// CORS
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
-
-	if r.Method == http.MethodOptions {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
 	ffmpegPath, err := exec.LookPath("ffmpeg")
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
 
-	// Extraer primer track de subtítulos como WebVTT
-	cmd := exec.CommandContext(r.Context(), ffmpegPath,
-		"-i", tmpPath,
-		"-map", "0:s:0",    // Primer stream de subtítulos
-		"-f", "webvtt",     // Formato WebVTT
-		"-v", "quiet",
-		"pipe:1",
-	)
+	mapArg := fmt.Sprintf("0:s:%d", streamIndex)
 
+	// Aplicar -ss antes de -i para que los timestamps en el VTT empiecen desde 0
+	// en el punto de seek, igual que el video.
+	args := []string{}
+	if seekOffset > 0 {
+		args = append(args, "-ss", fmt.Sprintf("%.3f", seekOffset))
+	}
+	args = append(args, "-i", tmpPath, "-map", mapArg, "-f", "webvtt", "-v", "quiet", "pipe:1")
+
+	cmd := exec.CommandContext(r.Context(), ffmpegPath, args...)
 	output, err := cmd.Output()
 	if err != nil || len(output) == 0 {
 		http.NotFound(w, r)
@@ -540,4 +671,160 @@ func (s *Service) handleSubtitles(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
 	w.Write(output)
+}
+
+// serveExternalSubtitle lee un archivo de subtítulos del torrent y lo convierte a WebVTT.
+// seekOffset: segundos desde donde se está reproduciendo el video.
+func (s *Service) serveExternalSubtitle(w http.ResponseWriter, r *http.Request, fileIndex int, seekOffset float64) {
+	s.mu.RLock()
+	mgr := s.mgr
+	info := s.torrentInfo
+	s.mu.RUnlock()
+
+	if mgr == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	if fileIndex < 0 || fileIndex >= len(info.Files) {
+		http.NotFound(w, r)
+		return
+	}
+
+	data, err := mgr.ReadFile(fileIndex)
+	if err != nil {
+		s.log.Warnf("Error leyendo subtítulo externo: %v", err)
+		http.Error(w, "Error leyendo archivo", http.StatusInternalServerError)
+		return
+	}
+
+	content := string(data)
+	ext := strings.ToLower(filepath.Ext(info.Files[fileIndex].Path))
+	if ext == ".srt" {
+		content = srtToVTT(content)
+	}
+
+	// Ajustar timestamps si hay seek activo
+	if seekOffset > 0 {
+		content = offsetVTT(content, seekOffset)
+	}
+
+	w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
+	w.Write([]byte(content))
+}
+
+// srtToVTT convierte subtítulos SRT a formato WebVTT.
+func srtToVTT(srt string) string {
+	var b strings.Builder
+	b.WriteString("WEBVTT\n\n")
+	lines := strings.Split(srt, "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "-->") {
+			line = strings.ReplaceAll(line, ",", ".")
+		}
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// offsetVTT ajusta los timestamps de un archivo WebVTT restando el seekOffset.
+// Descarta cues que terminan antes del punto de inicio.
+func offsetVTT(vtt string, seekOffset float64) string {
+	var b strings.Builder
+	lines := strings.Split(vtt, "\n")
+	skipCue := false
+
+	for _, line := range lines {
+		if strings.Contains(line, "-->") {
+			parts := strings.SplitN(line, "-->", 2)
+			if len(parts) == 2 {
+				start := parseVTTTimestamp(strings.TrimSpace(parts[0])) - seekOffset
+				end := parseVTTTimestamp(strings.TrimSpace(parts[1])) - seekOffset
+				if end <= 0 {
+					skipCue = true
+					continue
+				}
+				skipCue = false
+				if start < 0 {
+					start = 0
+				}
+				line = formatVTTTimestamp(start) + " --> " + formatVTTTimestamp(end)
+			}
+		} else if line == "" {
+			skipCue = false
+		}
+
+		if !skipCue {
+			b.WriteString(line)
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
+}
+
+// parseVTTTimestamp parsea "HH:MM:SS.mmm" o "MM:SS.mmm" a segundos.
+func parseVTTTimestamp(ts string) float64 {
+	// Separar parte de horas/minutos/segundos de milisegundos
+	dotIdx := strings.LastIndex(ts, ".")
+	ms := 0.0
+	if dotIdx >= 0 {
+		msStr := ts[dotIdx+1:]
+		for len(msStr) < 3 {
+			msStr += "0"
+		}
+		msVal, _ := strconv.Atoi(msStr[:3])
+		ms = float64(msVal) / 1000.0
+		ts = ts[:dotIdx]
+	}
+
+	parts := strings.Split(ts, ":")
+	secs := 0.0
+	for _, p := range parts {
+		v, _ := strconv.Atoi(p)
+		secs = secs*60 + float64(v)
+	}
+	return secs + ms
+}
+
+// formatVTTTimestamp formatea segundos a "HH:MM:SS.mmm".
+func formatVTTTimestamp(secs float64) string {
+	if secs < 0 {
+		secs = 0
+	}
+	h := int(secs) / 3600
+	m := (int(secs) % 3600) / 60
+	s := int(secs) % 60
+	ms := int((secs-float64(int(secs)))*1000 + 0.5)
+	return fmt.Sprintf("%02d:%02d:%02d.%03d", h, m, s, ms)
+}
+
+// guessLanguageFromFilename intenta detectar el idioma de un archivo de subtítulos por su nombre.
+func guessLanguageFromFilename(name string) string {
+	name = strings.ToLower(name)
+	base := strings.TrimSuffix(name, filepath.Ext(name))
+	parts := strings.FieldsFunc(base, func(r rune) bool {
+		return r == '.' || r == '_' || r == '-' || r == ' '
+	})
+
+	langCodes := map[string]string{
+		"en": "eng", "eng": "eng", "english": "eng",
+		"es": "spa", "spa": "spa", "spanish": "spa", "espanol": "spa",
+		"fr": "fre", "fre": "fre", "french": "fre", "fra": "fre",
+		"de": "ger", "ger": "ger", "german": "ger", "deu": "ger",
+		"it": "ita", "ita": "ita", "italian": "ita",
+		"pt": "por", "por": "por", "portuguese": "por",
+		"ja": "jpn", "jpn": "jpn", "japanese": "jpn",
+		"ko": "kor", "kor": "kor", "korean": "kor",
+		"zh": "chi", "chi": "chi", "chinese": "chi",
+		"ru": "rus", "rus": "rus", "russian": "rus",
+		"ar": "ara", "ara": "ara", "arabic": "ara",
+	}
+
+	for _, part := range parts {
+		if code, ok := langCodes[part]; ok {
+			return code
+		}
+	}
+	return "und"
 }

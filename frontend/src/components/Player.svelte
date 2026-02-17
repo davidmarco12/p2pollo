@@ -1,6 +1,6 @@
 <script>
   import { createEventDispatcher, onMount, onDestroy } from 'svelte'
-  import { GetStreamProgress } from '../../wailsjs/go/main/App.js'
+  import { GetStreamProgress, GetSubtitleTracks } from '../../wailsjs/go/main/App.js'
   import { WindowFullscreen, WindowUnfullscreen } from '../../wailsjs/runtime/runtime.js'
 
   const dispatch = createEventDispatcher()
@@ -13,7 +13,13 @@
   let streamError = ''
   let videoError = ''
   let videoDebug = ''
-  let subtitleBlobURL = ''
+  let subtitleTracks = []
+  let subtitleCues = []
+  let currentSubtitle = ''
+  let subtitleDelay = 0
+  let showSubtitleMenu = false
+  let activeSubtitleLabel = ''
+  let activeTrack = null
   let progressInterval = null
   let showDownloadInfo = false
 
@@ -23,12 +29,20 @@
   let seekOffset = 0
   let currentTime = 0
   let videoElement = null
+  let videoWrapper = null
 
   $: videoSrc = streamURL
     ? (seekOffset > 0 ? `${streamURL}?t=${Math.floor(seekOffset)}` : streamURL)
     : ''
   $: actualTime = seekOffset + currentTime
   $: seekPercent = videoDuration > 0 ? Math.min((actualTime / videoDuration) * 100, 100) : 0
+  // Renderizado reactivo de subtitulos: busca el cue activo segun actualTime + delay
+  $: currentSubtitle = (() => {
+    if (!subtitleCues.length) return ''
+    const t = actualTime + subtitleDelay
+    const cue = subtitleCues.find(c => t >= c.start && t < c.end)
+    return cue ? cue.text : ''
+  })()
 
   function startProgressPolling() {
     if (progressInterval) clearInterval(progressInterval)
@@ -38,7 +52,7 @@
         progress = p
         if (p.streamURL && !streamURL) {
           streamURL = p.streamURL
-          loadSubtitles(p.streamURL)
+          loadSubtitleTracks()
         }
         if (p.canSeekNatively !== undefined) {
           canSeekNatively = p.canSeekNatively
@@ -55,19 +69,72 @@
     }, 1000)
   }
 
-  // Cargar subtitulos via fetch + blob URL para evitar problemas de CORS
-  async function loadSubtitles(url) {
+  // Parsear timestamp VTT "HH:MM:SS.mmm" a segundos
+  function parseVTTTime(ts) {
+    ts = ts.trim().split(' ')[0]
+    const parts = ts.split(':')
+    let secs = 0
+    for (const p of parts) secs = secs * 60 + parseFloat(p)
+    return secs
+  }
+
+  // Parsear archivo WebVTT a array de cues { start, end, text }
+  function parseVTTCues(vttText) {
+    const cues = []
+    const lines = vttText.split('\n')
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
+      if (!line.includes('-->')) continue
+      const arrowIdx = line.indexOf('-->')
+      const start = parseVTTTime(line.substring(0, arrowIdx))
+      const end = parseVTTTime(line.substring(arrowIdx + 3))
+      const textLines = []
+      i++
+      while (i < lines.length && lines[i].trim() !== '') {
+        textLines.push(lines[i])
+        i++
+      }
+      if (textLines.length > 0) {
+        cues.push({ start, end, text: textLines.join('\n') })
+      }
+    }
+    return cues
+  }
+
+  // Cargar lista de tracks disponibles
+  async function loadSubtitleTracks() {
     try {
-      const subURL = url.replace('/stream', '/subtitles')
+      subtitleTracks = (await GetSubtitleTracks()) || []
+    } catch (e) {
+      subtitleTracks = []
+    }
+  }
+
+  // Seleccionar un track: descarga el VTT completo y lo parsea a cues
+  async function selectSubtitle(track) {
+    showSubtitleMenu = false
+
+    if (!track) {
+      subtitleCues = []
+      currentSubtitle = ''
+      activeSubtitleLabel = ''
+      activeTrack = null
+      return
+    }
+
+    try {
+      const baseURL = streamURL.replace('/stream', '/subtitles')
+      const subURL = `${baseURL}?type=${track.type}&index=${track.index}`
       const res = await fetch(subURL)
       if (!res.ok) return
       const text = await res.text()
       if (text && text.includes('WEBVTT')) {
-        const blob = new Blob([text], { type: 'text/vtt' })
-        subtitleBlobURL = URL.createObjectURL(blob)
+        subtitleCues = parseVTTCues(text)
+        activeSubtitleLabel = track.title || track.language
+        activeTrack = track
       }
     } catch (e) {
-      // no hay subtitulos disponibles
+      // error cargando subtitulo
     }
   }
 
@@ -80,7 +147,6 @@
 
   function handleClose() {
     stopProgressPolling()
-    if (subtitleBlobURL) URL.revokeObjectURL(subtitleBlobURL)
     dispatch('close')
   }
 
@@ -158,13 +224,22 @@
     return `${m}:${s.toString().padStart(2, '0')}`
   }
 
-  // Sincronizar fullscreen del video con fullscreen de la ventana Wails
+  // Sincronizar fullscreen del video con fullscreen de la ventana Wails.
+  // Si el <video> entró en fullscreen directamente (botón nativo del navegador),
+  // redirigir al videoWrapper para que los overlays (subtítulos, seek, CC) sean visibles.
   function handleFullscreenChange() {
-    if (document.fullscreenElement) {
-      WindowFullscreen()
-    } else {
+    const fsEl = document.fullscreenElement
+    if (!fsEl) {
       WindowUnfullscreen()
+      return
     }
+    if (fsEl === videoElement && videoWrapper) {
+      document.exitFullscreen().then(() => {
+        videoWrapper.requestFullscreen()
+      }).catch(() => {})
+      return
+    }
+    WindowFullscreen()
   }
 
   // Atajos de teclado para seek (funcionan en fullscreen nativo)
@@ -187,7 +262,6 @@
   })
   onDestroy(() => {
     stopProgressPolling()
-    if (subtitleBlobURL) URL.revokeObjectURL(subtitleBlobURL)
     document.removeEventListener('keydown', handleKeydown)
     document.removeEventListener('fullscreenchange', handleFullscreenChange)
   })
@@ -219,7 +293,7 @@
     <button class="close-btn" on:click={handleClose}>Cerrar</button>
   </div>
 
-  <div class="video-wrapper">
+  <div class="video-wrapper" bind:this={videoWrapper}>
     {#if streamURL && !videoError}
       <video
         bind:this={videoElement}
@@ -231,10 +305,14 @@
         on:loadeddata={handleVideoLoaded}
         on:timeupdate={handleTimeUpdate}
       >
-        {#if subtitleBlobURL}
-          <track kind="subtitles" src={subtitleBlobURL} label="Subtitulos" default />
-        {/if}
+        <track kind="captions" />
       </video>
+
+      {#if currentSubtitle}
+        <div class="subtitle-overlay">
+          {@html currentSubtitle.replace(/\n/g, '<br>')}
+        </div>
+      {/if}
 
       {#if !canSeekNatively && videoDuration > 0}
         <div class="seek-overlay">
@@ -246,6 +324,53 @@
             <button class="seek-btn" on:click={skipForward} title="Avanzar 30s">+30s</button>
             <span class="seek-time">{formatTime(actualTime)} / {formatTime(videoDuration)}</span>
           </div>
+        </div>
+      {/if}
+
+      {#if subtitleTracks.length > 0}
+        <div class="subtitle-control">
+          <button
+            class="subtitle-btn"
+            class:active={subtitleCues.length > 0}
+            on:click={() => showSubtitleMenu = !showSubtitleMenu}
+            title="Subtitulos"
+          >
+            CC
+          </button>
+          {#if showSubtitleMenu}
+            <div class="subtitle-menu">
+              <button
+                class="subtitle-option"
+                class:selected={!activeTrack}
+                on:click={() => selectSubtitle(null)}
+              >
+                Desactivados
+              </button>
+              {#each subtitleTracks as track}
+                <button
+                  class="subtitle-option"
+                  class:selected={activeSubtitleLabel === (track.title || track.language)}
+                  on:click={() => selectSubtitle(track)}
+                >
+                  {track.title || track.language}
+                  {#if track.type === 'external'}
+                    <span class="track-badge">SRT</span>
+                  {/if}
+                </button>
+              {/each}
+              {#if activeTrack}
+                <div class="subtitle-delay-row">
+                  <span>Retardo:</span>
+                  <button class="delay-btn" on:click={() => subtitleDelay -= 0.5}>-0.5s</button>
+                  <span class="delay-value">{subtitleDelay >= 0 ? '+' : ''}{subtitleDelay.toFixed(1)}s</span>
+                  <button class="delay-btn" on:click={() => subtitleDelay += 0.5}>+0.5s</button>
+                  {#if subtitleDelay !== 0}
+                    <button class="delay-btn" on:click={() => subtitleDelay = 0}>↺</button>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          {/if}
         </div>
       {/if}
     {:else if videoError}
@@ -371,6 +496,12 @@
     background: #000;
     min-height: 0;
     position: relative;
+  }
+
+  /* Cuando el wrapper es el elemento en fullscreen (DOM fullscreen API) */
+  .video-wrapper:fullscreen,
+  .video-wrapper:-webkit-full-screen {
+    background: #000;
   }
 
   .video-player {
@@ -543,5 +674,132 @@
     justify-content: space-between;
     font-size: 0.75rem;
     color: #666;
+  }
+
+  .subtitle-overlay {
+    position: absolute;
+    bottom: 56px;
+    left: 8%;
+    right: 8%;
+    text-align: center;
+    font-size: 1.05rem;
+    color: #fff;
+    text-shadow: 1px 1px 3px #000, -1px 1px 3px #000, 1px -1px 3px #000, -1px -1px 3px #000;
+    pointer-events: none;
+    z-index: 5;
+    line-height: 1.45;
+    user-select: none;
+  }
+
+  .subtitle-control {
+    position: absolute;
+    bottom: 8px;
+    right: 12px;
+    z-index: 10;
+  }
+
+  .subtitle-btn {
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    background: rgba(0, 0, 0, 0.6);
+    color: #aaa;
+    font-size: 0.75rem;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+    letter-spacing: 0.5px;
+  }
+
+  .subtitle-btn:hover {
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+  }
+
+  .subtitle-btn.active {
+    color: #ff6b35;
+    border-color: #ff6b35;
+  }
+
+  .subtitle-menu {
+    position: absolute;
+    bottom: 100%;
+    right: 0;
+    margin-bottom: 6px;
+    background: rgba(20, 20, 20, 0.95);
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 4px 0;
+    min-width: 180px;
+    max-height: 250px;
+    overflow-y: auto;
+  }
+
+  .subtitle-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 14px;
+    border: none;
+    background: transparent;
+    color: #ccc;
+    font-size: 0.8rem;
+    font-family: inherit;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.15s;
+  }
+
+  .subtitle-option:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .subtitle-option.selected {
+    color: #ff6b35;
+    font-weight: 600;
+  }
+
+  .track-badge {
+    font-size: 0.65rem;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: rgba(255, 107, 53, 0.2);
+    color: #ff6b35;
+    margin-left: auto;
+  }
+
+  .subtitle-delay-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 7px 14px 8px;
+    border-top: 1px solid #2a2a2a;
+    font-size: 0.75rem;
+    color: #888;
+  }
+
+  .delay-btn {
+    padding: 2px 7px;
+    border-radius: 3px;
+    border: 1px solid #444;
+    background: #222;
+    color: #ccc;
+    font-size: 0.72rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .delay-btn:hover {
+    background: #333;
+  }
+
+  .delay-value {
+    min-width: 38px;
+    text-align: center;
+    color: #ff6b35;
+    font-weight: 600;
   }
 </style>
