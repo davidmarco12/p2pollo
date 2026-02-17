@@ -30,6 +30,9 @@
   let currentTime = 0
   let videoElement = null
   let videoWrapper = null
+  let playerContainer = null
+  let isFullscreen = false
+  let ignoringFullscreenChange = false
 
   $: videoSrc = streamURL
     ? (seekOffset > 0 ? `${streamURL}?t=${Math.floor(seekOffset)}` : streamURL)
@@ -224,25 +227,45 @@
     return `${m}:${s.toString().padStart(2, '0')}`
   }
 
-  // Sincronizar fullscreen del video con fullscreen de la ventana Wails.
-  // Si el <video> entró en fullscreen directamente (botón nativo del navegador),
-  // redirigir al videoWrapper para que los overlays (subtítulos, seek, CC) sean visibles.
+  // Alterna fullscreen usando DOM fullscreen sobre el playerContainer completo.
+  // Así el header se oculta con CSS :fullscreen y todos los overlays permanecen visibles.
+  function toggleFullscreen() {
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {})
+    } else {
+      playerContainer?.requestFullscreen().catch(() => {})
+    }
+  }
+
+  // Sincronizar estado interno y Wails con los eventos del DOM fullscreen.
+  // Si el <video> entró en fullscreen directamente, redirigir al playerContainer.
   function handleFullscreenChange() {
+    if (ignoringFullscreenChange) return
+
     const fsEl = document.fullscreenElement
+
     if (!fsEl) {
+      isFullscreen = false
       WindowUnfullscreen()
       return
     }
-    if (fsEl === videoElement && videoWrapper) {
-      document.exitFullscreen().then(() => {
-        videoWrapper.requestFullscreen()
-      }).catch(() => {})
+
+    // Nativo del video: redirigir al container completo
+    if (fsEl === videoElement && playerContainer) {
+      ignoringFullscreenChange = true
+      document.exitFullscreen()
+        .then(() => playerContainer.requestFullscreen())
+        .then(() => { ignoringFullscreenChange = false })
+        .catch(() => { ignoringFullscreenChange = false })
       return
     }
+
+    // playerContainer (o cualquier otro) en fullscreen
+    isFullscreen = true
     WindowFullscreen()
   }
 
-  // Atajos de teclado para seek (funcionan en fullscreen nativo)
+  // Atajos de teclado para seek (ESC ya lo maneja el browser en DOM fullscreen)
   function handleKeydown(event) {
     if (!streamURL || videoError) return
 
@@ -267,7 +290,7 @@
   })
 </script>
 
-<div class="player-container">
+<div class="player-container" bind:this={playerContainer}>
   <div class="player-header">
     <div class="player-title">
       <span class="now-playing">
@@ -327,7 +350,12 @@
         </div>
       {/if}
 
-      {#if subtitleTracks.length > 0}
+      <div class="video-controls-overlay">
+        <button class="overlay-btn" on:click={toggleFullscreen} title={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}>
+          {#if isFullscreen}⊡{:else}⊞{/if}
+        </button>
+
+        {#if subtitleTracks.length > 0}
         <div class="subtitle-control">
           <button
             class="subtitle-btn"
@@ -373,6 +401,7 @@
           {/if}
         </div>
       {/if}
+      </div>
     {:else if videoError}
       <div class="loading-video">
         <span class="error-text">{videoError}</span>
@@ -508,6 +537,21 @@
     width: 100%;
     height: 100%;
     object-fit: contain;
+  }
+
+  /* Ocultar botón fullscreen nativo del video — usamos el nuestro */
+  :global(video::-webkit-media-controls-fullscreen-button) {
+    display: none;
+  }
+
+  /* En fullscreen: ocultar header y footer para máxima área de video */
+  .player-container:fullscreen .player-header,
+  .player-container:-webkit-full-screen .player-header {
+    display: none;
+  }
+  .player-container:fullscreen .download-footer,
+  .player-container:-webkit-full-screen .download-footer {
+    display: none;
   }
 
   /* En modo ffmpeg, esconder la barra de timeline nativa (muestra duracion incorrecta) */
@@ -691,10 +735,36 @@
     user-select: none;
   }
 
-  .subtitle-control {
+  /* Contenedor de botones de control personalizados (fullscreen + CC) */
+  .video-controls-overlay {
     position: absolute;
     bottom: 8px;
     right: 12px;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .overlay-btn {
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    background: rgba(0, 0, 0, 0.6);
+    color: #aaa;
+    font-size: 0.85rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+  }
+
+  .overlay-btn:hover {
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+  }
+
+  .subtitle-control {
+    position: relative;
     z-index: 10;
   }
 

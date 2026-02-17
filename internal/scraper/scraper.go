@@ -8,14 +8,15 @@ import (
 )
 
 type Result struct {
-	Name       string // Nombre del torrent
-	MagnetLink string // Enlace magnet
-	Size       string // Tamano formateado (ej: "1.5 GB")
-	Seeds      int    // Cantidad de seeders
-	Leechers   int    // Cantidad de leechers
-	Source     string // Sitio de origen (ej: "1337x", "Nyaa.si")
-	Category   string // Categoria del contenido
-	UploadDate string // Fecha de subida como texto
+	Name       string   // Nombre del torrent
+	MagnetLink string   // Enlace magnet
+	Size       string   // Tamano formateado (ej: "1.5 GB")
+	Seeds      int      // Cantidad de seeders
+	Leechers   int      // Cantidad de leechers
+	Source     string   // Sitio de origen (ej: "1337x", "Nyaa.si")
+	Category   string   // Categoria del contenido
+	UploadDate string   // Fecha de subida como texto
+	Subtitles  []string // Idiomas de subtitulos detectados en el nombre del release
 }
 
 // HealthScore calcula un puntaje de salud del torrent (0-100)
@@ -175,6 +176,73 @@ func sortResults(results []Result, order SortOrder) {
 			return results[i].Size > results[j].Size
 		})
 	}
+}
+
+// subtitleTokens mapea tokens del nombre del release a su etiqueta normalizada.
+// Solo incluye tokens que son claramente indicadores de subtítulos/idioma.
+var subtitleTokens = map[string]string{
+	"MULTI":    "MULTI",
+	"MULTISUB": "MULTI",
+	"DUAL":     "DUAL",
+	"SUB":      "SUB",
+	"SUBS":     "SUB",
+	"CC":       "CC",
+	"ENG":      "ENG",
+	"ENGLISH":  "ENG",
+	"SPA":      "SPA",
+	"SPANISH":  "SPA",
+	"ESP":      "SPA",
+	"LAT":      "LAT",
+	"LATINO":   "LAT",
+	"POR":      "POR",
+	"PTBR":     "POR",
+	"FRE":      "FRE",
+	"FRENCH":   "FRE",
+	"FRA":      "FRE",
+	"GER":      "GER",
+	"GERMAN":   "GER",
+	"DEU":      "GER",
+	"ITA":      "ITA",
+	"ITALIAN":  "ITA",
+	"JPN":      "JPN",
+	"JAPANESE": "JPN",
+	"CHI":      "CHI",
+	"CHINESE":  "CHI",
+	"KOR":      "KOR",
+	"KOREAN":   "KOR",
+	"RUS":      "RUS",
+	"RUSSIAN":  "RUS",
+	"ARA":      "ARA",
+	"ARABIC":   "ARA",
+}
+
+// ParseSubtitleLanguages extrae etiquetas de idioma/subtítulo del nombre de un release.
+// Devuelve una lista deduplicada y ordenada de etiquetas (ej: ["ENG", "MULTI", "SPA"]).
+// Si no se detecta nada, devuelve nil.
+func ParseSubtitleLanguages(name string) []string {
+	// Separar por puntos, guiones, espacios y guiones bajos
+	replacer := strings.NewReplacer(".", " ", "-", " ", "_", " ")
+	tokens := strings.Fields(strings.ToUpper(replacer.Replace(name)))
+
+	seen := make(map[string]bool)
+	var result []string
+
+	for _, tok := range tokens {
+		if label, ok := subtitleTokens[tok]; ok {
+			if !seen[label] {
+				seen[label] = true
+				result = append(result, label)
+			}
+		}
+	}
+
+	// Solo devolver si hay algo significativo (MULTI, idiomas concretos, etc.)
+	// Filtrar el caso donde solo hay "SUB" genérico sin idioma concreto
+	if len(result) == 1 && (result[0] == "SUB" || result[0] == "CC") {
+		return nil
+	}
+
+	return result
 }
 
 // FormatSize convierte una cantidad de bytes a formato legible (ej: "1.5 GB")

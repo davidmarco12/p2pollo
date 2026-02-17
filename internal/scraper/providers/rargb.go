@@ -3,6 +3,7 @@ package providers
 import (
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -37,6 +38,12 @@ type rargbResult struct {
 	size      string
 }
 
+// detailInfo contiene los datos extraídos de la página de detalle
+type detailInfo struct {
+	magnet    string
+	subtitles []string
+}
+
 // Search busca torrents en rargb.to para la consulta dada.
 func (r *Rargb) Search(query string) ([]scraper.Result, error) {
 	query = strings.TrimSpace(query)
@@ -57,8 +64,8 @@ func (r *Rargb) Search(query string) ([]scraper.Result, error) {
 		return []scraper.Result{}, nil
 	}
 
-	// Obtener magnet links de las páginas de detalle
-	results := r.fetchMagnetLinks(partial)
+	// Obtener magnet links y subtítulos de las páginas de detalle
+	results := r.fetchDetails(partial)
 	return results, nil
 }
 
@@ -111,8 +118,8 @@ func (r *Rargb) fetchSearchResults(url string) ([]rargbResult, error) {
 	return results, nil
 }
 
-// fetchMagnetLinks obtiene los magnet links de las páginas de detalle de forma concurrente.
-func (r *Rargb) fetchMagnetLinks(partial []rargbResult) []scraper.Result {
+// fetchDetails obtiene el magnet link y subtítulos de las páginas de detalle de forma concurrente.
+func (r *Rargb) fetchDetails(partial []rargbResult) []scraper.Result {
 	var (
 		mu      sync.Mutex
 		wg      sync.WaitGroup
@@ -127,18 +134,19 @@ func (r *Rargb) fetchMagnetLinks(partial []rargbResult) []scraper.Result {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			magnet := r.fetchMagnetFromDetail(sr.detailURL)
+			info := r.fetchDetailInfo(sr.detailURL)
 
 			// Solo incluir si obtuvimos el magnet link
-			if magnet != "" {
+			if info.magnet != "" {
 				mu.Lock()
 				results = append(results, scraper.Result{
 					Name:       sr.name,
-					MagnetLink: magnet,
+					MagnetLink: info.magnet,
 					Size:       sr.size,
 					Seeds:      sr.seeds,
 					Leechers:   sr.leechers,
 					Source:     "rargb",
+					Subtitles:  info.subtitles,
 				})
 				mu.Unlock()
 			}
@@ -149,18 +157,113 @@ func (r *Rargb) fetchMagnetLinks(partial []rargbResult) []scraper.Result {
 	return results
 }
 
-// fetchMagnetFromDetail entra a la página de detalle de un torrent
-// y extrae el magnet link.
-func (r *Rargb) fetchMagnetFromDetail(detailPath string) string {
-	url := r.baseURL + detailPath
-	doc, err := r.fetchDocument(url)
+// fetchDetailInfo extrae el magnet link y los idiomas de subtítulos de la página de detalle.
+func (r *Rargb) fetchDetailInfo(detailPath string) detailInfo {
+	doc, err := r.fetchDocument(r.baseURL + detailPath)
 	if err != nil {
-		return ""
+		return detailInfo{}
 	}
 
-	// El magnet link está en un <a> con href que empieza con "magnet:"
 	magnet, _ := doc.Find("a[href^='magnet:']").First().Attr("href")
-	return magnet
+	subtitles := scrapeSubtitlesFromDetail(doc)
+
+	return detailInfo{magnet: magnet, subtitles: subtitles}
+}
+
+// subtitleSectionRe detecta el inicio de una sección de subtítulos en MediaInfo.
+// Cubre los patrones: "-- Subtitle --", "---Subtitle----", "Text #1", "Text #2", etc.
+var subtitleSectionRe = regexp.MustCompile(`(?i)(text\s*#\d+|\-+\s*subtitle\s*\-+|^subtitle\s*$)`)
+
+// languageLineRe detecta una línea con información de idioma.
+var languageLineRe = regexp.MustCompile(`(?i)\blanguage\b`)
+
+// subtitleLangPatterns mapea nombres completos de idiomas a sus códigos.
+var subtitleLangPatterns = []struct {
+	re   *regexp.Regexp
+	code string
+}{
+	{regexp.MustCompile(`(?i)\benglish\b`), "ENG"},
+	{regexp.MustCompile(`(?i)\bspanish\b`), "SPA"},
+	{regexp.MustCompile(`(?i)\blatin\b`), "LAT"},
+	{regexp.MustCompile(`(?i)\bportuguese\b`), "POR"},
+	{regexp.MustCompile(`(?i)\bfrench\b`), "FRE"},
+	{regexp.MustCompile(`(?i)\bgerman\b`), "GER"},
+	{regexp.MustCompile(`(?i)\bitalian\b`), "ITA"},
+	{regexp.MustCompile(`(?i)\bjapanese\b`), "JPN"},
+	{regexp.MustCompile(`(?i)\bchinese\b|(?i)\bmandarin\b`), "CHI"},
+	{regexp.MustCompile(`(?i)\bkorean\b`), "KOR"},
+	{regexp.MustCompile(`(?i)\brussian\b`), "RUS"},
+	{regexp.MustCompile(`(?i)\barabic\b`), "ARA"},
+	{regexp.MustCompile(`(?i)\bdutch\b`), "NLD"},
+	{regexp.MustCompile(`(?i)\bswedish\b`), "SWE"},
+	{regexp.MustCompile(`(?i)\bnorwegian\b`), "NOR"},
+	{regexp.MustCompile(`(?i)\bpolish\b`), "POL"},
+	{regexp.MustCompile(`(?i)\bturkish\b`), "TUR"},
+	{regexp.MustCompile(`(?i)\bhindi\b`), "HIN"},
+	{regexp.MustCompile(`(?i)\bgreek\b`), "GRE"},
+	{regexp.MustCompile(`(?i)\bhebrew\b`), "HEB"},
+	{regexp.MustCompile(`(?i)\bthai\b`), "THA"},
+}
+
+// scrapeSubtitlesFromDetail extrae los idiomas de subtítulos del HTML de la página de detalle.
+// Busca en secciones MediaInfo del tipo "Text #N" y "-- Subtitle --".
+func scrapeSubtitlesFromDetail(doc *goquery.Document) []string {
+	seen := make(map[string]bool)
+	var result []string
+
+	addLangs := func(text string) {
+		for _, p := range subtitleLangPatterns {
+			if p.re.MatchString(text) && !seen[p.code] {
+				seen[p.code] = true
+				result = append(result, p.code)
+			}
+		}
+	}
+
+	// Estrategia 1: celdas de tabla adyacentes al header "Subtitle"
+	doc.Find("td, th").Each(func(_ int, s *goquery.Selection) {
+		if subtitleSectionRe.MatchString(strings.TrimSpace(s.Text())) {
+			s.Next().Each(func(_ int, next *goquery.Selection) {
+				addLangs(next.Text())
+			})
+			addLangs(s.Text())
+		}
+	})
+
+	// Estrategia 2: parsear el texto completo línea por línea buscando secciones subtitle
+	// (cubre MediaInfo embebido en divs o pre/textarea)
+	fullText := doc.Find("body").Text()
+	lines := strings.Split(fullText, "\n")
+
+	inSubtitleBlock := false
+	blankLines := 0
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		if trimmed == "" {
+			blankLines++
+			// Después de 3 líneas en blanco salimos del bloque subtitle
+			if blankLines >= 3 {
+				inSubtitleBlock = false
+			}
+			continue
+		}
+		blankLines = 0
+
+		if subtitleSectionRe.MatchString(trimmed) {
+			inSubtitleBlock = true
+		}
+
+		if inSubtitleBlock {
+			// Solo procesar líneas que hablan de "Language" o tienen idiomas directamente
+			if languageLineRe.MatchString(trimmed) || inSubtitleBlock {
+				addLangs(trimmed)
+			}
+		}
+	}
+
+	return result
 }
 
 // fetchDocument hace un GET y retorna el documento parseado.

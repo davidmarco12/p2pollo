@@ -64,13 +64,14 @@ func (a *App) shutdown(ctx context.Context) {
 
 // SearchResult es la estructura que recibe el frontend
 type SearchResult struct {
-	Name       string `json:"name"`
-	MagnetLink string `json:"magnetLink"`
-	Size       string `json:"size"`
-	Seeds      int    `json:"seeds"`
-	Leechers   int    `json:"leechers"`
-	Source     string `json:"source"`
-	Health     int    `json:"health"`
+	Name       string   `json:"name"`
+	MagnetLink string   `json:"magnetLink"`
+	Size       string   `json:"size"`
+	Seeds      int      `json:"seeds"`
+	Leechers   int      `json:"leechers"`
+	Source     string   `json:"source"`
+	Health     int      `json:"health"`
+	Subtitles  []string `json:"subtitles"`
 }
 
 // Search busca torrents en los proveedores registrados
@@ -90,6 +91,7 @@ func (a *App) Search(query string) ([]SearchResult, error) {
 			Leechers:   r.Leechers,
 			Source:     r.Source,
 			Health:     r.HealthScore(),
+			Subtitles:  r.Subtitles,
 		}
 	}
 	return out, nil

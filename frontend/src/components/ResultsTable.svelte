@@ -32,7 +32,19 @@
         <div class="result-row" on:click={() => handlePlay(result)}>
           <div class="result-info">
             <span class="result-name">{result.name}</span>
-            <span class="result-source">{result.source}</span>
+            <div class="result-meta">
+              <span class="source-chip">{result.source}</span>
+              {#if result.subtitles && result.subtitles.length > 0}
+                <span class="sub-tags">
+                  SUB:
+                  {#each result.subtitles as lang}
+                    <span class="sub-tag">{lang}</span>
+                  {/each}
+                </span>
+              {:else}
+                <span class="sub-none">SUB: None</span>
+              {/if}
+            </div>
           </div>
           <div class="result-stats">
             <span class="stat size">{result.size}</span>
@@ -109,10 +121,46 @@
     text-overflow: ellipsis;
   }
 
-  .result-source {
-    font-size: 0.75rem;
-    color: #555;
-    margin-top: 2px;
+  .result-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 3px;
+  }
+
+  .source-chip {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    border: 1px solid #3a3a3a;
+    background: #252525;
+    font-size: 0.7rem;
+    color: #888;
+    letter-spacing: 0.4px;
+  }
+
+  .sub-tags {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.7rem;
+    color: #666;
+  }
+
+  .sub-none {
+    font-size: 0.7rem;
+    color: #444;
+  }
+
+  .sub-tag {
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(255, 107, 53, 0.15);
+    border: 1px solid rgba(255, 107, 53, 0.3);
+    color: #e07040;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.3px;
   }
 
   .size {
