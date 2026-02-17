@@ -7,7 +7,6 @@
   "frontend:dev:watcher": "npm run dev",
   "frontend:dev:serverUrl": "auto",
   "author": {
-    "name": "davidmarco12",
-    "email": "davidmarcolin@sirius.com.ar"
+    "name": "davidmarco"
   }
 }
