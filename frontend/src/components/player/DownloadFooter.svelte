@@ -1,5 +1,5 @@
 <script>
-  import { formatBytes } from '../utils/playerUtils.js'
+  import { formatBytes } from '../../utils/playerUtils.js'
 
   export let progress = null
 

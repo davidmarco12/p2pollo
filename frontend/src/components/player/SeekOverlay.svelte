@@ -1,6 +1,6 @@
 <script>
   import { createEventDispatcher } from 'svelte'
-  import { formatTime } from '../utils/playerUtils.js'
+  import { formatTime } from '../../utils/playerUtils.js'
 
   const dispatch = createEventDispatcher()
 

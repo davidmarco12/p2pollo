@@ -1,9 +1,9 @@
 <script>
   import { onMount } from 'svelte'
-  import SearchBar from './components/SearchBar.svelte'
-  import MovieGrid from './components/MovieGrid.svelte'
-  import MovieDetail from './components/MovieDetail.svelte'
-  import Player from './components/Player.svelte'
+  import SearchBar from './components/search/SearchBar.svelte'
+  import MovieGrid from './components/catalog/MovieGrid.svelte'
+  import MovieDetail from './components/catalog/MovieDetail.svelte'
+  import Player from './components/player/Player.svelte'
   import { Search, PlayMagnet, StopStream, GetPopularMovies, SearchMovies } from '../wailsjs/go/main/App.js'
 
   // Estado de la app
