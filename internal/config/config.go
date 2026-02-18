@@ -65,13 +65,12 @@ type LoggingConfig struct {
 
 // DefaultConfig retorna una configuración con valores por defecto
 func DefaultConfig() *Config {
-	// Usar directorio del ejecutable como base para cache y logs
-	exePath, err := os.Executable()
-	var baseDir string
-	if err == nil {
+	// Usar directorio de trabajo como base (correcto en wails dev y producción cuando se lanza desde el proyecto).
+	// Fallback al directorio del ejecutable si os.Getwd() falla.
+	baseDir, err := os.Getwd()
+	if err != nil {
+		exePath, _ := os.Executable()
 		baseDir = filepath.Dir(exePath)
-	} else {
-		baseDir, _ = os.Getwd()
 	}
 
 	return &Config{

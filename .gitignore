@@ -47,6 +47,7 @@ temp/
 downloads/
 cache/
 .torrent-cache/
+.webview-data/
 
 # Debug
 debug

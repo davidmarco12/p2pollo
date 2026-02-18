@@ -317,12 +317,7 @@ func (m *Manager) ReadFile(fileIndex int) ([]byte, error) {
 // --- métodos internos ---
 
 func (m *Manager) createTempFile() error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("obtener home directory: %w", err)
-	}
-
-	cacheDir := filepath.Join(home, ".cache", "p2pollo", "temp")
+	cacheDir := filepath.Join(m.cfg.Paths.CacheDir, "temp")
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
 		return fmt.Errorf("crear directorio de caché: %w", err)
 	}
@@ -333,10 +328,11 @@ func (m *Manager) createTempFile() error {
 	}
 
 	m.tmpPath = filepath.Join(cacheDir, fmt.Sprintf("p2pollo-stream-%d%s", time.Now().Unix(), fileExt))
-	m.tmpFile, err = os.OpenFile(m.tmpPath, os.O_CREATE|os.O_RDWR, 0644)
+	f, err := os.OpenFile(m.tmpPath, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		return fmt.Errorf("abrir archivo temporal: %w", err)
 	}
+	m.tmpFile = f
 
 	return nil
 }

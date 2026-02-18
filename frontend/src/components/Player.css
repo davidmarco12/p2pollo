@@ -1,0 +1,122 @@
+.player-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #000;
+}
+
+/* Ocultar header y footer en fullscreen */
+.player-container:fullscreen :global(.player-header),
+.player-container:-webkit-full-screen :global(.player-header) {
+  display: none;
+}
+.player-container:fullscreen :global(.download-footer),
+.player-container:-webkit-full-screen :global(.download-footer) {
+  display: none;
+}
+
+.video-wrapper {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  min-height: 0;
+  position: relative;
+}
+
+.video-player {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* Ocultar botón fullscreen nativo */
+:global(video::-webkit-media-controls-fullscreen-button) {
+  display: none;
+}
+
+/* Modo ffmpeg: ocultar timeline nativa */
+.video-player.no-native-seek::-webkit-media-controls-timeline,
+.video-player.no-native-seek::-webkit-media-controls-current-time-display,
+.video-player.no-native-seek::-webkit-media-controls-time-remaining-display {
+  display: none;
+}
+
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: #888;
+  font-size: 1rem;
+}
+
+.error-text {
+  color: #f44336;
+}
+
+.error-hint {
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.peers-info {
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #333;
+  border-top-color: #ff6b35;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.subtitle-overlay {
+  position: absolute;
+  bottom: 56px;
+  left: 8%;
+  right: 8%;
+  text-align: center;
+  font-size: 1.05rem;
+  color: #fff;
+  text-shadow: 1px 1px 3px #000, -1px 1px 3px #000, 1px -1px 3px #000, -1px -1px 3px #000;
+  pointer-events: none;
+  z-index: 5;
+  line-height: 1.45;
+  user-select: none;
+}
+
+.video-controls-overlay {
+  position: absolute;
+  bottom: 8px;
+  right: 12px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.overlay-btn {
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(0, 0, 0, 0.6);
+  color: #aaa;
+  font-size: 0.85rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+
+.overlay-btn:hover {
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+}
