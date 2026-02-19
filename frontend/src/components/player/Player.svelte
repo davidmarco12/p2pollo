@@ -2,7 +2,7 @@
   import { createEventDispatcher, onMount, onDestroy } from 'svelte'
   import { GetStreamProgress, GetSubtitleTracks } from '../../../wailsjs/go/main/App.js'
   import { WindowFullscreen, WindowUnfullscreen } from '../../../wailsjs/runtime/runtime.js'
-  import { parseVTTCues } from '../../utils/playerUtils.js'
+  import { parseVTTCues, formatBytes } from '../../utils/playerUtils.js'
   import PlayerHeader from './PlayerHeader.svelte'
   import SeekOverlay from './SeekOverlay.svelte'
   import SubtitleControl from './SubtitleControl.svelte'
@@ -268,7 +268,7 @@
         <div class="spinner"></div>
         <span>
           {#if progress && progress.totalSize > 0}
-            Descargando buffer... {progress.headWritten} / {progress.totalSize}
+            Descargando buffer... {formatBytes(progress.headWritten)} / {formatBytes(progress.totalSize)}
           {:else if progress && progress.preparing}
             Conectando al torrent...
           {:else}
