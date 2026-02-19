@@ -67,6 +67,10 @@ type Service struct {
 	// Subtítulos detectados
 	subtitleTracks []SubtitleTrack
 
+	// Cache de VTT extraídos por ffmpeg. Clave: "<tmpPath>:<streamIndex>".
+	// Evita re-ejecutar ffmpeg en cada seek o re-selección del mismo track.
+	subtitleCache map[string]string
+
 	// Estado async
 	preparing     bool
 	streamErr     error
@@ -90,9 +94,10 @@ func NewService(cfg *config.Config) (*Service, error) {
 	}
 
 	return &Service{
-		cfg:    cfg,
-		client: client,
-		log:    log,
+		cfg:           cfg,
+		client:        client,
+		log:           log,
+		subtitleCache: make(map[string]string),
 	}, nil
 }
 
@@ -182,6 +187,9 @@ func (s *Service) startStreamInternal(ctx context.Context, magnetURI string, fil
 		s.subtitleTracks = tracks
 		s.mu.Unlock()
 		s.log.Infof("Subtítulos detectados: %d tracks", len(tracks))
+
+		// Pre-extraer subtítulos embebidos en background para que el primer click sea instantáneo.
+		go s.prewarmSubtitleCache(ctx, tmpPath, tracks)
 	case <-ctx.Done():
 		mgr.Stop()
 		return fmt.Errorf("streaming cancelado")
@@ -293,6 +301,7 @@ func (s *Service) Stop() error {
 	s.videoDuration = 0
 	s.canSeekNatively = false
 	s.subtitleTracks = nil
+	s.subtitleCache = make(map[string]string)
 	s.mu.Unlock()
 
 	// Detener servidor HTTP (fuera del lock)
@@ -524,6 +533,48 @@ func (s *Service) GetSubtitleTracks() []SubtitleTrack {
 	return s.subtitleTracks
 }
 
+// prewarmSubtitleCache extrae todos los tracks embebidos en background para que
+// el primer click del usuario sea instantáneo (respuesta desde cache, sin ffmpeg).
+func (s *Service) prewarmSubtitleCache(ctx context.Context, tmpPath string, tracks []SubtitleTrack) {
+	ffmpegPath, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		return
+	}
+
+	for _, track := range tracks {
+		if track.Type != "embedded" {
+			continue
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		cacheKey := fmt.Sprintf("%s:%d", tmpPath, track.Index)
+
+		s.mu.RLock()
+		_, cached := s.subtitleCache[cacheKey]
+		s.mu.RUnlock()
+		if cached {
+			continue
+		}
+
+		mapArg := fmt.Sprintf("0:s:%d", track.Index)
+		cmd := exec.CommandContext(ctx, ffmpegPath, "-i", tmpPath, "-map", mapArg, "-f", "webvtt", "-v", "quiet", "pipe:1")
+		output, err := cmd.Output()
+		if err != nil || len(output) == 0 {
+			continue
+		}
+
+		s.mu.Lock()
+		s.subtitleCache[cacheKey] = string(output)
+		s.mu.Unlock()
+		s.log.Debugf("Subtítulo pre-extraído: track %d (%d bytes)", track.Index, len(output))
+	}
+}
+
 // detectSubtitleTracks detecta subtítulos embebidos (ffprobe) y externos (.srt del torrent).
 func (s *Service) detectSubtitleTracks(videoPath string) []SubtitleTrack {
 	var tracks []SubtitleTrack
@@ -646,31 +697,46 @@ func (s *Service) serveEmbeddedSubtitle(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	ffmpegPath, err := exec.LookPath("ffmpeg")
-	if err != nil {
-		http.NotFound(w, r)
-		return
+	cacheKey := fmt.Sprintf("%s:%d", tmpPath, streamIndex)
+
+	// Buscar en cache primero para evitar re-ejecutar ffmpeg en cada seek.
+	s.mu.RLock()
+	cached, found := s.subtitleCache[cacheKey]
+	s.mu.RUnlock()
+
+	if !found {
+		// Primera vez: extraer el VTT completo desde el inicio (sin -ss).
+		// Se cachea el resultado; el offset de seek se aplica en Go.
+		ffmpegPath, err := exec.LookPath("ffmpeg")
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+
+		mapArg := fmt.Sprintf("0:s:%d", streamIndex)
+		args := []string{"-i", tmpPath, "-map", mapArg, "-f", "webvtt", "-v", "quiet", "pipe:1"}
+
+		cmd := exec.CommandContext(r.Context(), ffmpegPath, args...)
+		output, err := cmd.Output()
+		if err != nil || len(output) == 0 {
+			http.NotFound(w, r)
+			return
+		}
+
+		cached = string(output)
+		s.mu.Lock()
+		s.subtitleCache[cacheKey] = cached
+		s.mu.Unlock()
 	}
 
-	mapArg := fmt.Sprintf("0:s:%d", streamIndex)
-
-	// Aplicar -ss antes de -i para que los timestamps en el VTT empiecen desde 0
-	// en el punto de seek, igual que el video.
-	args := []string{}
+	// Ajustar timestamps al punto de seek actual (operación en memoria, instantánea).
+	vtt := cached
 	if seekOffset > 0 {
-		args = append(args, "-ss", fmt.Sprintf("%.3f", seekOffset))
-	}
-	args = append(args, "-i", tmpPath, "-map", mapArg, "-f", "webvtt", "-v", "quiet", "pipe:1")
-
-	cmd := exec.CommandContext(r.Context(), ffmpegPath, args...)
-	output, err := cmd.Output()
-	if err != nil || len(output) == 0 {
-		http.NotFound(w, r)
-		return
+		vtt = offsetVTT(cached, seekOffset)
 	}
 
 	w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
-	w.Write(output)
+	w.Write([]byte(vtt))
 }
 
 // serveExternalSubtitle lee un archivo de subtítulos del torrent y lo convierte a WebVTT.

@@ -131,7 +131,11 @@ func (m *Manager) Start(ctx context.Context, opts Options) error {
 
 	ctx, m.cancel = context.WithCancel(ctx)
 
-	// Priorizar piezas iniciales para streaming secuencial
+	// Download() llama DownloadAll() que setea TODAS las piezas a PiecePriorityNormal.
+	// Debe ejecutarse ANTES de PrioritizeSequential, si no borra las prioridades.
+	m.t.Download()
+
+	// Priorizar piezas iniciales para streaming secuencial (PiecePriorityNow > Normal)
 	readahead := 100
 	if readahead > m.info.NumPieces {
 		readahead = m.info.NumPieces
@@ -150,8 +154,6 @@ func (m *Manager) Start(ctx context.Context, opts Options) error {
 		firstMoovPiece = 0
 	}
 	m.t.PrioritizeSequential(firstMoovPiece, lastPiece)
-
-	m.t.Download()
 
 	// Crear archivo temporal
 	if err := m.createTempFile(); err != nil {

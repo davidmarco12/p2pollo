@@ -73,6 +73,12 @@ func NewWithOptions(cfg *config.Config, lowMemory bool) (*Client, error) {
 		storage.NewMapPieceCompletion(),
 	)
 
+	// Identidad del cliente visible para otros peers (qBittorrent, trackers, etc.)
+	// Por defecto anacrolix usa el path del módulo Go (github.com/davidmarco12/p2pollo...).
+	clientCfg.ExtendedHandshakeClientVersion = "p2pollo"
+	clientCfg.Bep20 = "-p2p001-" // 8 chars: prefijo BEP 20 en el peer ID
+	clientCfg.HTTPUserAgent = "p2pollo/1.0"
+
 	// Habilitar upload durante la descarga: el protocolo BitTorrent premia a quienes
 	// suben (tit-for-tat). Con NoUpload=true los peers nos "chokean" y la velocidad
 	// de descarga cae drásticamente. Seed=false evita que sigamos subiendo después
