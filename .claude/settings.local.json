@@ -28,7 +28,9 @@
       "Bash(python -m json.tool:*)",
       "Bash(python:*)",
       "Bash(npm run build:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(magick:*)",
+      "Bash(python3:*)"
     ]
   }
 }

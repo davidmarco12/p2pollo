@@ -1,5 +1,6 @@
 <script>
   import { createEventDispatcher } from 'svelte'
+  import logo from '../../assets/images/output-estesi.png'
 
   const dispatch = createEventDispatcher()
 
@@ -26,23 +27,21 @@
 
 <div class="search-bar">
   <div class="search-container">
-    <h1 class="logo" on:click={handleHome}>p2pollo</h1>
-    <div class="input-row">
-      <input
-        type="text"
-        bind:value={query}
-        on:keydown={handleKeydown}
-        placeholder="Buscar pelicula, serie, anime..."
-        disabled={loading}
-      />
-      <button on:click={handleSearch} disabled={loading || !query.trim()}>
-        {#if loading}
-          Buscando...
-        {:else}
-          Buscar
-        {/if}
-      </button>
-    </div>
+    <img src={logo} class="logo" on:click={handleHome} alt="p2pollo" />
+    <input
+      type="text"
+      bind:value={query}
+      on:keydown={handleKeydown}
+      placeholder="Buscar pelicula, serie, anime..."
+      disabled={loading}
+    />
+    <button on:click={handleSearch} disabled={loading || !query.trim()}>
+      {#if loading}
+        Buscando...
+      {:else}
+        Buscar
+      {/if}
+    </button>
   </div>
 </div>
 
@@ -53,23 +52,23 @@
     border-bottom: 1px solid #2a2a2a;
   }
 
+  .search-container {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
   .logo {
-    font-size: 1.4rem;
-    font-weight: 700;
-    color: #ff6b35;
-    margin-bottom: 12px;
-    letter-spacing: -0.5px;
+    height: 40px;
+    width: auto;
+    flex-shrink: 0;
     cursor: pointer;
     user-select: none;
   }
 
-  .input-row {
-    display: flex;
-    gap: 8px;
-  }
-
   input {
     flex: 1;
+    min-width: 0;
     padding: 10px 14px;
     border-radius: 6px;
     border: 1px solid #333;

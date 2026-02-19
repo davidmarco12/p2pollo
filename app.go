@@ -47,6 +47,7 @@ func (a *App) startup(ctx context.Context) {
 	// Inicializar scraper con proveedores
 	s := scraper.New()
 	s.RegisterProvider("rargb", providers.NewRargb())
+	s.RegisterProvider("thepiratebay", providers.NewThePirateBay(cfg.Trackers))
 	a.scraper = s
 
 	// Inicializar catalogo YTS
