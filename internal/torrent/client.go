@@ -73,23 +73,26 @@ func NewWithOptions(cfg *config.Config, lowMemory bool) (*Client, error) {
 		storage.NewMapPieceCompletion(),
 	)
 
-	// Para streaming: no hacer upload durante la descarga
-	clientCfg.NoUpload = true
+	// Habilitar upload durante la descarga: el protocolo BitTorrent premia a quienes
+	// suben (tit-for-tat). Con NoUpload=true los peers nos "chokean" y la velocidad
+	// de descarga cae drásticamente. Seed=false evita que sigamos subiendo después
+	// de que el stream termina y se llama Stop().
+	clientCfg.NoUpload = false
 	clientCfg.Seed = false
 
-	// Limitar conexiones simultáneas para evitar "Not enough memory" en Windows
+	// Conexiones por torrent según modo de memoria
 	if lowMemory {
 		// Modo ultra-bajo para máquinas con < 100MB RAM
-		clientCfg.HalfOpenConnsPerTorrent = 2    // Mínimo absoluto
-		clientCfg.TorrentPeersLowWater = 1       // Solo 1 peer mínimo
-		clientCfg.TorrentPeersHighWater = 3      // Máximo 3 peers
-		clientCfg.EstablishedConnsPerTorrent = 2 // 2 conexiones máximo
+		clientCfg.HalfOpenConnsPerTorrent = 2
+		clientCfg.TorrentPeersLowWater = 1
+		clientCfg.TorrentPeersHighWater = 3
+		clientCfg.EstablishedConnsPerTorrent = 2
 	} else {
-		// Modo normal - valores que funcionaban bien
-		clientCfg.HalfOpenConnsPerTorrent = 16    // Estándar
-		clientCfg.TorrentPeersLowWater = 5        // Mantener mínimo de peers
-		clientCfg.TorrentPeersHighWater = 30      // Máximo de peers
-		clientCfg.EstablishedConnsPerTorrent = 20 // Conexiones establecidas
+		// Modo normal: más peers = más fuentes simultáneas = más velocidad
+		clientCfg.HalfOpenConnsPerTorrent = 32
+		clientCfg.TorrentPeersLowWater = 20
+		clientCfg.TorrentPeersHighWater = 200
+		clientCfg.EstablishedConnsPerTorrent = 100
 	}
 
 	// Limitar chunks en paralelo
