@@ -6,12 +6,14 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/davidmarco12/p2pollo/internal/config"
 	"github.com/davidmarco12/p2pollo/internal/torrent"
+	"github.com/sirupsen/logrus"
 )
 
 // Options configura el comportamiento del streaming.
@@ -55,6 +57,7 @@ type Progress struct {
 type Manager struct {
 	cfg    *config.Config
 	client *torrent.Client
+	log    *logrus.Logger
 
 	// Estado del torrent activo
 	t         *torrent.Torrent
@@ -82,9 +85,15 @@ type Manager struct {
 
 // New crea un nuevo Manager.
 func New(cfg *config.Config, client *torrent.Client) *Manager {
+	log := logrus.New()
+	log.SetLevel(logrus.InfoLevel)
+	if cfg.Logging.Level == "debug" {
+		log.SetLevel(logrus.DebugLevel)
+	}
 	return &Manager{
 		cfg:    cfg,
 		client: client,
+		log:    log,
 	}
 }
 
@@ -131,29 +140,34 @@ func (m *Manager) Start(ctx context.Context, opts Options) error {
 
 	ctx, m.cancel = context.WithCancel(ctx)
 
-	// Download() llama DownloadAll() que setea TODAS las piezas a PiecePriorityNormal.
-	// Debe ejecutarse ANTES de PrioritizeSequential, si no borra las prioridades.
-	m.t.Download()
+	// Detectar si el archivo necesita moov (solo MP4/M4V).
+	// MKV, AVI, TS, etc. guardan metadata al inicio: no necesitan pre-descargar el final.
+	// Para MP4 no-faststart el moov está al final y el player no puede decodificar sin él.
+	fileExt := strings.ToLower(filepath.Ext(m.info.Files[m.fileIndex].Path))
+	needsMoov := fileExt == ".mp4" || fileExt == ".m4v"
 
-	// Priorizar piezas iniciales para streaming secuencial (PiecePriorityNow > Normal)
-	readahead := 100
-	if readahead > m.info.NumPieces {
-		readahead = m.info.NumPieces
-	}
-	m.t.PrioritizeSequential(0, readahead-1)
-
-	// Priorizar últimas piezas para el moov atom
 	moovSize := opts.moovBytes()
 	if moovSize > m.totalSize {
 		moovSize = m.totalSize
 	}
-	moovPieces := int(moovSize/m.info.PieceLength) + 1
-	lastPiece := m.info.NumPieces - 1
-	firstMoovPiece := lastPiece - moovPieces
-	if firstMoovPiece < 0 {
-		firstMoovPiece = 0
+
+	if needsMoov {
+		// Estrategia MP4: priorizar SOLO las piezas del moov, sin DownloadAll.
+		// Así los peers trabajan exclusivamente en esas piezas (~1-2s con buena conexión).
+		// DownloadAll se llama en downloadMoov tras completar la descarga.
+		moovPieces := int(moovSize/m.info.PieceLength) + 1
+		lastPiece := m.info.NumPieces - 1
+		firstMoovPiece := lastPiece - moovPieces
+		if firstMoovPiece < 0 {
+			firstMoovPiece = 0
+		}
+		m.t.PrioritizeSequential(firstMoovPiece, lastPiece)
+	} else {
+		// Estrategia MKV/otros: metadata al inicio → arrancar descarga completa ya,
+		// marcar moov como listo para que downloadSequential empiece de inmediato.
+		m.t.Download()
+		m.moovReady.Store(true)
 	}
-	m.t.PrioritizeSequential(firstMoovPiece, lastPiece)
 
 	// Crear archivo temporal
 	if err := m.createTempFile(); err != nil {
@@ -177,11 +191,13 @@ func (m *Manager) Start(ctx context.Context, opts Options) error {
 	m.lastTime.Store(time.Now().UnixNano())
 	m.lastBytes.Store(0)
 
-	// Goroutine: descargar moov atom (final del archivo)
-	m.wg.Add(1)
-	go m.downloadMoov(ctx, moovSize)
+	// Goroutine: descargar moov atom solo para MP4 (para MKV moovReady ya está seteado)
+	if needsMoov {
+		m.wg.Add(1)
+		go m.downloadMoov(ctx, moovSize)
+	}
 
-	// Goroutine: copia secuencial desde el inicio
+	// Goroutine: copia secuencial desde el inicio (espera moovReady)
 	m.wg.Add(1)
 	go m.downloadSequential(ctx)
 
@@ -316,6 +332,11 @@ func (m *Manager) ReadFile(fileIndex int) ([]byte, error) {
 	return data, nil
 }
 
+// readerResponsive y readerReadahead permiten configurar el reader de anacrolix
+// sin exponer el tipo concreto en la API del package torrent.
+type readerResponsive interface{ SetResponsive() }
+type readerReadahead interface{ SetReadahead(int64) }
+
 // --- métodos internos ---
 
 func (m *Manager) createTempFile() error {
@@ -354,12 +375,36 @@ func (m *Manager) downloadMoov(ctx context.Context, moovSize int64) {
 
 	reader, err := m.newFileReader()
 	if err != nil {
+		m.log.Errorf("downloadMoov: error creando reader: %v", err)
 		return
 	}
 
+	// SetResponsive: el reader solicita las piezas del moov con PiecePriorityNow.
+	// El reader secuencial usa SetReadahead (PiecePriorityReadahead, menor prioridad),
+	// así el moov gana y se descarga antes que el readahead secuencial.
+	if rs, ok := reader.(readerResponsive); ok {
+		rs.SetResponsive()
+	}
+
+	// Cerrar el reader cuando el context se cancele para desbloquear Read().
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			if closer, ok := reader.(io.Closer); ok {
+				closer.Close()
+			}
+		case <-done:
+		}
+	}()
+
 	if _, err := reader.Seek(moovOffset, io.SeekStart); err != nil {
+		m.log.Errorf("downloadMoov: error en Seek(%d de %d): %v", moovOffset, m.totalSize, err)
 		return
 	}
+
+	m.log.Infof("downloadMoov: descargando %d MB desde offset %d", moovSize/(1024*1024), moovOffset)
 
 	buf := make([]byte, 64*1024)
 	written := int64(0)
@@ -380,6 +425,9 @@ func (m *Manager) downloadMoov(ctx context.Context, moovSize int64) {
 			written += int64(n)
 		}
 		if readErr != nil {
+			if ctx.Err() == nil {
+				m.log.Debugf("downloadMoov: read error tras %d bytes: %v", written, readErr)
+			}
 			break
 		}
 	}
@@ -388,7 +436,16 @@ func (m *Manager) downloadMoov(ctx context.Context, moovSize int64) {
 	// Si el reader falló inmediatamente (ej: "torrent data downloading disabled"),
 	// written será 0 y no debemos marcar moov como listo.
 	if written >= moovSize*9/10 {
+		m.log.Infof("downloadMoov: listo (%d bytes escritos)", written)
 		m.moovReady.Store(true)
+		// Habilitar descarga completa del torrent ahora que el moov está listo.
+		// Hasta este punto solo las piezas del moov estaban marcadas como wanted
+		// (PiecePriorityNow), así todos los peers trabajaron exclusivamente en ellas.
+		m.t.Download()
+	} else {
+		m.log.Warnf("downloadMoov: incompleto — solo %d de %d bytes escritos", written, moovSize)
+		// Habilitar descarga completa igual para no bloquear el streaming indefinidamente.
+		m.t.Download()
 	}
 }
 
@@ -396,9 +453,26 @@ func (m *Manager) downloadMoov(ctx context.Context, moovSize int64) {
 func (m *Manager) downloadSequential(ctx context.Context) {
 	defer m.wg.Done()
 
+	// Esperar a que el moov esté listo antes de empezar la descarga secuencial.
+	// Mientras el moov no esté, no queremos un Read() bloqueado compitiendo con él:
+	// cualquier Read() bloqueado genera PiecePriorityNow en su pieza actual,
+	// igualando la prioridad del moov e impidiendo que baje primero.
+	for !m.moovReady.Load() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+
 	reader, err := m.newFileReader()
 	if err != nil {
 		return
+	}
+
+	// SetReadahead prefetcha 32 MB adelante con PiecePriorityReadahead.
+	if ra, ok := reader.(readerReadahead); ok {
+		ra.SetReadahead(32 * 1024 * 1024)
 	}
 
 	buf := make([]byte, 64*1024)

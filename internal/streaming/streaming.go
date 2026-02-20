@@ -152,7 +152,7 @@ func (s *Service) startStreamInternal(ctx context.Context, magnetURI string, fil
 	// Iniciar descarga con buffer reducido para arranque rápido
 	opts := stream.Options{
 		BufferMB: int64(s.cfg.Streaming.InitialBufferSize),
-		MoovMB:   2,
+		MoovMB:   10,
 	}
 	if err := mgr.Start(ctx, opts); err != nil {
 		return fmt.Errorf("error iniciando descarga: %w", err)
