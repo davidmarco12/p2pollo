@@ -31,7 +31,8 @@
       "Bash(grep:*)",
       "Bash(magick:*)",
       "Bash(python3:*)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(wails build:*)"
     ]
   }
 }

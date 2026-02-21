@@ -120,3 +120,159 @@
   background: rgba(0, 0, 0, 0.8);
   color: #fff;
 }
+
+/* mpv playback info */
+.playback-info {
+  width: 100%;
+  max-width: 800px;
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.mpv-notice {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  background: rgba(255, 107, 53, 0.1);
+  border: 1px solid rgba(255, 107, 53, 0.3);
+  border-radius: 8px;
+}
+
+.mpv-icon {
+  font-size: 2.5rem;
+  color: #ff6b35;
+}
+
+.mpv-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #e0e0e0;
+  margin-bottom: 4px;
+}
+
+.mpv-hint {
+  font-size: 0.85rem;
+  color: #888;
+  line-height: 1.4;
+}
+
+/* Progress bar */
+.playback-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 6px;
+  background: #333;
+  border-radius: 3px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-bar:hover {
+  height: 8px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: #ff6b35;
+  transition: width 0.2s;
+  border-radius: 3px;
+}
+
+.progress-time {
+  font-size: 0.9rem;
+  color: #aaa;
+  text-align: right;
+}
+
+/* Playback controls */
+.playback-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.control-btn {
+  padding: 10px 16px;
+  border-radius: 6px;
+  border: 1px solid #444;
+  background: #222;
+  color: #e0e0e0;
+  font-size: 1.2rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 44px;
+}
+
+.control-btn:hover {
+  background: #333;
+  border-color: #666;
+  transform: translateY(-1px);
+}
+
+.control-btn:active {
+  transform: translateY(0);
+}
+
+.play-btn {
+  font-size: 1.4rem;
+  padding: 12px 20px;
+  background: #ff6b35;
+  border-color: #ff6b35;
+}
+
+.play-btn:hover {
+  background: #ff8555;
+  border-color: #ff8555;
+}
+
+.volume-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.volume-slider {
+  width: 100px;
+  height: 4px;
+  border-radius: 2px;
+  background: #333;
+  outline: none;
+  cursor: pointer;
+}
+
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ff6b35;
+  cursor: pointer;
+}
+
+.volume-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ff6b35;
+  cursor: pointer;
+  border: none;
+}
+
+.volume-value {
+  font-size: 0.85rem;
+  color: #888;
+  min-width: 40px;
+}

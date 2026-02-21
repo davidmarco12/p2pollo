@@ -1,10 +1,8 @@
 <script>
   import { createEventDispatcher, onMount, onDestroy } from 'svelte'
-  import { GetStreamProgress, GetSubtitleTracks } from '../../../wailsjs/go/main/App.js'
-  import { WindowFullscreen, WindowUnfullscreen } from '../../../wailsjs/runtime/runtime.js'
-  import { parseVTTCues, formatBytes } from '../../utils/playerUtils.js'
+  import { GetStreamProgress, GetMPVPlaybackState, GetMPVTracks, MPVCommand, SetMPVProperty } from '../../../wailsjs/go/main/App.js'
+  import { formatBytes } from '../../utils/playerUtils.js'
   import PlayerHeader from './PlayerHeader.svelte'
-  import SeekOverlay from './SeekOverlay.svelte'
   import SubtitleControl from './SubtitleControl.svelte'
   import DownloadFooter from './DownloadFooter.svelte'
 
@@ -13,49 +11,29 @@
   export let torrentName = ''
   export let torrentSize = ''
 
-  // Stream state
+  // Stream state (torrent download)
   let progress = null
-  let streamURL = ''
   let streamError = ''
-  let videoError = ''
-  let videoDebug = ''
   let progressInterval = null
+
+  // Playback state (mpv)
+  let playbackState = null
+  let isPlaying = false
+  let currentTime = 0
+  let duration = 0
+  let volume = 100
 
   // Subtitle state
   let subtitleTracks = []
-  let subtitleCues = []
-  let currentSubtitle = ''
+  let activeSubtitleID = null
   let subtitleDelay = 0
-  let activeSubtitleLabel = ''
-  let activeTrack = null
-
-  // Seek state
-  let canSeekNatively = false
-  let videoDuration = 0
-  let seekOffset = 0
-  let currentTime = 0
-
-  // DOM refs
-  let videoElement = null
-  let videoWrapper = null
-  let playerContainer = null
-
-  // Fullscreen
-  let isFullscreen = false
-  let ignoringFullscreenChange = false
 
   // Reactivos
-  $: videoSrc = streamURL
-    ? (seekOffset > 0 ? `${streamURL}?t=${Math.floor(seekOffset)}` : streamURL)
-    : ''
-  $: actualTime = seekOffset + currentTime
-  $: seekPercent = videoDuration > 0 ? Math.min((actualTime / videoDuration) * 100, 100) : 0
-  $: currentSubtitle = (() => {
-    if (!subtitleCues.length) return ''
-    const t = actualTime + subtitleDelay
-    const cue = subtitleCues.find(c => t >= c.start && t < c.end)
-    return cue ? cue.text : ''
-  })()
+  $: isPlaying = playbackState && !playbackState.paused
+  $: currentTime = playbackState?.timePos || 0
+  $: duration = playbackState?.videoDuration || 0
+  $: volume = playbackState?.volume || 100
+  $: seekPercent = duration > 0 ? Math.min((currentTime / duration) * 100, 100) : 0
 
   // --- Progress polling ---
 
@@ -63,15 +41,21 @@
     if (progressInterval) clearInterval(progressInterval)
     progressInterval = setInterval(async () => {
       try {
+        // Poll torrent download progress
         const p = await GetStreamProgress()
         progress = p
-        if (p.streamURL && !streamURL) {
-          streamURL = p.streamURL
-          loadSubtitleTracks()
-        }
-        if (p.canSeekNatively !== undefined) canSeekNatively = p.canSeekNatively
-        if (p.videoDuration > 0) videoDuration = p.videoDuration
         if (p.error && !streamError) streamError = p.error
+
+        // Poll mpv playback state
+        try {
+          playbackState = await GetMPVPlaybackState()
+          // Cargar tracks solo una vez cuando mpv está listo
+          if (playbackState && subtitleTracks.length === 0) {
+            loadSubtitleTracks()
+          }
+        } catch (e) {
+          // mpv aún no está listo
+        }
       } catch (e) { /* ignorar errores de polling */ }
     }, 1000)
   }
@@ -87,102 +71,101 @@
 
   async function loadSubtitleTracks() {
     try {
-      subtitleTracks = (await GetSubtitleTracks()) || []
+      const tracks = await GetMPVTracks()
+      subtitleTracks = tracks.filter(t => t.type === 'sub')
+      // Detectar cual está activo
+      const active = subtitleTracks.find(t => t.selected)
+      if (active) activeSubtitleID = active.id
     } catch (e) {
       subtitleTracks = []
     }
   }
 
-  async function selectSubtitle(track) {
-    if (!track) {
-      subtitleCues = []
-      currentSubtitle = ''
-      activeSubtitleLabel = ''
-      activeTrack = null
-      return
-    }
+  async function selectSubtitle(trackID) {
     try {
-      const baseURL = streamURL.replace('/stream', '/subtitles')
-      const subURL = `${baseURL}?type=${track.type}&index=${track.index}`
-      const res = await fetch(subURL)
-      if (!res.ok) return
-      const text = await res.text()
-      if (text && text.includes('WEBVTT')) {
-        subtitleCues = parseVTTCues(text)
-        activeSubtitleLabel = track.title || track.language
-        activeTrack = track
+      if (trackID === null) {
+        // Desactivar subtítulos
+        await SetMPVProperty('sid', 'no')
+        activeSubtitleID = null
+      } else {
+        await SetMPVProperty('sid', trackID)
+        activeSubtitleID = trackID
       }
-    } catch (e) { /* error cargando subtitulo */ }
-  }
-
-  // --- Seek ---
-
-  function seekTo(targetSeconds) {
-    if (targetSeconds < 0) targetSeconds = 0
-    if (videoDuration > 0 && targetSeconds > videoDuration) targetSeconds = videoDuration
-    if (canSeekNatively && videoElement) {
-      videoElement.currentTime = targetSeconds
-      return
-    }
-    seekOffset = Math.floor(targetSeconds)
-    currentTime = 0
-  }
-
-  // --- Video event handlers ---
-
-  function handleVideoError(event) {
-    const err = event.target.error
-    if (!err) return
-    const codes = {
-      1: 'Reproduccion cancelada',
-      2: 'Error de red al cargar el video',
-      3: 'Error decodificando el video (formato no soportado)',
-      4: 'Formato de video no soportado por el navegador',
-    }
-    videoError = codes[err.code] || `Error de video (codigo ${err.code})`
-  }
-
-  function handleVideoLoaded(event) {
-    const v = event.target
-    videoDebug = `${v.videoWidth}x${v.videoHeight} | duracion: ${Math.round(v.duration)}s | readyState: ${v.readyState}`
-  }
-
-  // --- Fullscreen ---
-
-  function toggleFullscreen() {
-    if (document.fullscreenElement) {
-      document.exitFullscreen().catch(() => {})
-    } else {
-      playerContainer?.requestFullscreen().catch(() => {})
+      // Recargar tracks para actualizar estado
+      await loadSubtitleTracks()
+    } catch (e) {
+      console.error('Error seleccionando subtítulo:', e)
     }
   }
 
-  function handleFullscreenChange() {
-    if (ignoringFullscreenChange) return
-    const fsEl = document.fullscreenElement
-    if (!fsEl) {
-      isFullscreen = false
-      WindowUnfullscreen()
-      return
+  async function changeSubtitleDelay(delta) {
+    try {
+      await MPVCommand('add', 'sub-delay', delta)
+      subtitleDelay += delta
+    } catch (e) {
+      console.error('Error ajustando delay de subtítulos:', e)
     }
-    if (fsEl === videoElement && playerContainer) {
-      ignoringFullscreenChange = true
-      document.exitFullscreen()
-        .then(() => playerContainer.requestFullscreen())
-        .then(() => { ignoringFullscreenChange = false })
-        .catch(() => { ignoringFullscreenChange = false })
-      return
+  }
+
+  async function resetSubtitleDelay() {
+    try {
+      await SetMPVProperty('sub-delay', 0)
+      subtitleDelay = 0
+    } catch (e) {
+      console.error('Error reseteando delay de subtítulos:', e)
     }
-    isFullscreen = true
-    WindowFullscreen()
+  }
+
+  // --- Playback controls ---
+
+  async function togglePlayPause() {
+    try {
+      await MPVCommand('cycle', 'pause')
+    } catch (e) {
+      console.error('Error toggle play/pause:', e)
+    }
+  }
+
+  async function seekRelative(seconds) {
+    try {
+      await MPVCommand('seek', seconds, 'relative')
+    } catch (e) {
+      console.error('Error seeking:', e)
+    }
+  }
+
+  async function seekAbsolute(seconds) {
+    try {
+      await MPVCommand('seek', seconds, 'absolute')
+    } catch (e) {
+      console.error('Error seeking:', e)
+    }
+  }
+
+  async function toggleFullscreen() {
+    try {
+      await MPVCommand('cycle', 'fullscreen')
+    } catch (e) {
+      console.error('Error toggle fullscreen:', e)
+    }
+  }
+
+  async function setVolume(vol) {
+    try {
+      await SetMPVProperty('volume', vol)
+    } catch (e) {
+      console.error('Error setting volume:', e)
+    }
   }
 
   // --- Keyboard ---
 
   function handleKeydown(event) {
-    if (!streamURL || videoError) return
-    if (event.key === 'ArrowLeft') { event.preventDefault(); seekTo(actualTime - 10) }
-    else if (event.key === 'ArrowRight') { event.preventDefault(); seekTo(actualTime + 30) }
+    if (streamError) return
+    if (event.key === ' ') { event.preventDefault(); togglePlayPause() }
+    else if (event.key === 'ArrowLeft') { event.preventDefault(); seekRelative(-10) }
+    else if (event.key === 'ArrowRight') { event.preventDefault(); seekRelative(30) }
+    else if (event.key === 'f') { event.preventDefault(); toggleFullscreen() }
   }
 
   function handleClose() {
@@ -190,80 +173,39 @@
     dispatch('close')
   }
 
+  function formatTime(seconds) {
+    if (!seconds || seconds < 0) return '0:00'
+    const h = Math.floor(seconds / 3600)
+    const m = Math.floor((seconds % 3600) / 60)
+    const s = Math.floor(seconds % 60)
+    if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+    return `${m}:${s.toString().padStart(2, '0')}`
+  }
+
   onMount(() => {
     startProgressPolling()
     document.addEventListener('keydown', handleKeydown)
-    document.addEventListener('fullscreenchange', handleFullscreenChange)
   })
+
   onDestroy(() => {
     stopProgressPolling()
     document.removeEventListener('keydown', handleKeydown)
-    document.removeEventListener('fullscreenchange', handleFullscreenChange)
   })
 </script>
 
-<div class="player-container" bind:this={playerContainer}>
+<div class="player-container">
 
   <PlayerHeader
-    {torrentName} {torrentSize} {streamURL} {videoError} {streamError} {progress} {videoDebug}
+    {torrentName} {torrentSize} streamURL="" videoError="" {streamError} {progress} videoDebug=""
     on:close={handleClose}
   />
 
-  <div class="video-wrapper" bind:this={videoWrapper}>
-    {#if streamURL && !videoError}
-      <video
-        bind:this={videoElement}
-        controls
-        autoplay
-        src={videoSrc}
-        class="video-player {!canSeekNatively ? 'no-native-seek' : ''}"
-        on:error={handleVideoError}
-        on:loadeddata={handleVideoLoaded}
-        on:timeupdate={(e) => currentTime = e.target.currentTime}
-      >
-        <track kind="captions" />
-      </video>
-
-      {#if currentSubtitle}
-        <div class="subtitle-overlay">
-          {@html currentSubtitle.replace(/\n/g, '<br>')}
-        </div>
-      {/if}
-
-      {#if !canSeekNatively && videoDuration > 0}
-        <SeekOverlay
-          {seekPercent} {actualTime} {videoDuration}
-          on:back={() => seekTo(actualTime - 10)}
-          on:forward={() => seekTo(actualTime + 30)}
-          on:seek={(e) => seekTo(e.detail * videoDuration)}
-        />
-      {/if}
-
-      <div class="video-controls-overlay">
-        <button class="overlay-btn" on:click={toggleFullscreen} title={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}>
-          {#if isFullscreen}⊡{:else}⊞{/if}
-        </button>
-        <SubtitleControl
-          tracks={subtitleTracks}
-          {activeTrack}
-          activeLabel={activeSubtitleLabel}
-          hasCues={subtitleCues.length > 0}
-          delay={subtitleDelay}
-          on:select={(e) => selectSubtitle(e.detail)}
-          on:delayChange={(e) => subtitleDelay = e.detail}
-        />
-      </div>
-
-    {:else if videoError}
-      <div class="loading-state">
-        <span class="error-text">{videoError}</span>
-        <span class="error-hint">Asegurate de tener ffmpeg instalado para reproducir archivos MKV</span>
-      </div>
-    {:else if streamError}
+  <div class="video-wrapper">
+    {#if streamError}
       <div class="loading-state">
         <span class="error-text">{streamError}</span>
       </div>
-    {:else}
+    {:else if !playbackState}
       <div class="loading-state">
         <div class="spinner"></div>
         <span>
@@ -278,6 +220,69 @@
         {#if progress && progress.peers > 0}
           <span class="peers-info">{progress.peers} peers conectados</span>
         {/if}
+      </div>
+    {:else}
+      <!-- mpv está reproduciendo en su propia ventana -->
+      <div class="playback-info">
+        <div class="mpv-notice">
+          <div class="mpv-icon">▶</div>
+          <div>
+            <div class="mpv-title">Reproduciendo en mpv</div>
+            <div class="mpv-hint">Usa los controles de abajo o las teclas: Espacio (play/pause), ← → (seek), F (fullscreen)</div>
+          </div>
+        </div>
+
+        <!-- Progress bar -->
+        <div class="playback-progress">
+          <div class="progress-bar" on:click={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect()
+            const percent = (e.clientX - rect.left) / rect.width
+            seekAbsolute(percent * duration)
+          }}>
+            <div class="progress-fill" style="width: {seekPercent}%"></div>
+          </div>
+          <div class="progress-time">
+            {formatTime(currentTime)} / {formatTime(duration)}
+          </div>
+        </div>
+
+        <!-- Playback controls -->
+        <div class="playback-controls">
+          <button class="control-btn" on:click={() => seekRelative(-10)} title="Retroceder 10s">
+            ⏪
+          </button>
+          <button class="control-btn play-btn" on:click={togglePlayPause} title={isPlaying ? 'Pausar' : 'Reproducir'}>
+            {isPlaying ? '⏸' : '▶'}
+          </button>
+          <button class="control-btn" on:click={() => seekRelative(30)} title="Adelantar 30s">
+            ⏩
+          </button>
+          <button class="control-btn" on:click={toggleFullscreen} title="Pantalla completa">
+            ⊞
+          </button>
+
+          <div class="volume-control">
+            <span>🔊</span>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              bind:value={volume}
+              on:input={(e) => setVolume(parseInt(e.target.value))}
+              class="volume-slider"
+            />
+            <span class="volume-value">{volume}%</span>
+          </div>
+
+          <SubtitleControl
+            tracks={subtitleTracks}
+            activeTrackID={activeSubtitleID}
+            delay={subtitleDelay}
+            on:select={(e) => selectSubtitle(e.detail)}
+            on:delayChange={(e) => changeSubtitleDelay(e.detail)}
+            on:delayReset={resetSubtitleDelay}
+          />
+        </div>
       </div>
     {/if}
   </div>

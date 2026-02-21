@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/davidmarco12/p2pollo/internal/catalog"
 	"github.com/davidmarco12/p2pollo/internal/catalog/yts"
@@ -159,11 +160,10 @@ func (a *App) StopStream() error {
 
 // SubtitleTrackInfo es la estructura que recibe el frontend para los subtítulos
 type SubtitleTrackInfo struct {
-	Index    int    `json:"index"`
+	ID       int    `json:"id"`
 	Language string `json:"language"`
 	Title    string `json:"title"`
-	Type     string `json:"type"`
-	FileName string `json:"fileName,omitempty"`
+	Selected bool   `json:"selected"`
 }
 
 // GetSubtitleTracks retorna los tracks de subtítulos disponibles del stream activo
@@ -176,14 +176,128 @@ func (a *App) GetSubtitleTracks() []SubtitleTrackInfo {
 	out := make([]SubtitleTrackInfo, len(tracks))
 	for i, t := range tracks {
 		out[i] = SubtitleTrackInfo{
-			Index:    t.Index,
+			ID:       t.ID,
 			Language: t.Language,
 			Title:    t.Title,
-			Type:     t.Type,
-			FileName: t.FileName,
+			Selected: t.Selected,
 		}
 	}
 	return out
+}
+
+// --- Métodos de control de mpv ---
+
+// TrackInfo representa un track de audio/video/subtítulos para el frontend
+type TrackInfo struct {
+	ID       int    `json:"id"`
+	Type     string `json:"type"`     // "video", "audio", "sub"
+	Language string `json:"language"` // Código de idioma
+	Title    string `json:"title"`    // Título descriptivo
+	Selected bool   `json:"selected"` // Si está actualmente seleccionado
+}
+
+// MPVCommand envía un comando genérico a mpv via IPC
+func (a *App) MPVCommand(cmd string, args ...interface{}) error {
+	if a.streamer == nil {
+		return fmt.Errorf("streamer no inicializado")
+	}
+
+	mpv := a.streamer.GetPlayer()
+	if mpv == nil || !mpv.IsRunning() {
+		return fmt.Errorf("mpv no está ejecutándose")
+	}
+
+	return mpv.Command(cmd, args...)
+}
+
+// GetMPVProperty obtiene el valor de una propiedad de mpv
+func (a *App) GetMPVProperty(name string) (interface{}, error) {
+	if a.streamer == nil {
+		return nil, fmt.Errorf("streamer no inicializado")
+	}
+
+	mpv := a.streamer.GetPlayer()
+	if mpv == nil || !mpv.IsRunning() {
+		return nil, fmt.Errorf("mpv no está ejecutándose")
+	}
+
+	return mpv.GetProperty(name)
+}
+
+// SetMPVProperty establece el valor de una propiedad de mpv
+func (a *App) SetMPVProperty(name string, value interface{}) error {
+	if a.streamer == nil {
+		return fmt.Errorf("streamer no inicializado")
+	}
+
+	mpv := a.streamer.GetPlayer()
+	if mpv == nil || !mpv.IsRunning() {
+		return fmt.Errorf("mpv no está ejecutándose")
+	}
+
+	return mpv.SetProperty(name, value)
+}
+
+// GetMPVTracks obtiene todos los tracks (audio, video, subtítulos) de mpv
+func (a *App) GetMPVTracks() ([]TrackInfo, error) {
+	if a.streamer == nil {
+		return nil, fmt.Errorf("streamer no inicializado")
+	}
+
+	mpv := a.streamer.GetPlayer()
+	if mpv == nil || !mpv.IsRunning() {
+		return nil, fmt.Errorf("mpv no está ejecutándose")
+	}
+
+	tracks, err := mpv.GetTracks()
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]TrackInfo, len(tracks))
+	for i, t := range tracks {
+		out[i] = TrackInfo{
+			ID:       t.ID,
+			Type:     t.Type,
+			Language: t.Language,
+			Title:    t.Title,
+			Selected: t.Selected,
+		}
+	}
+
+	return out, nil
+}
+
+// MPVPlaybackState representa el estado actual de reproducción
+type MPVPlaybackState struct {
+	TimePos  float64 `json:"timePos"`  // Posición actual (segundos)
+	Duration float64 `json:"duration"` // Duración total (segundos)
+	Paused   bool    `json:"paused"`   // Si está pausado
+	Volume   int     `json:"volume"`   // Volumen (0-100)
+}
+
+// GetMPVPlaybackState obtiene el estado actual de reproducción de mpv
+func (a *App) GetMPVPlaybackState() (*MPVPlaybackState, error) {
+	if a.streamer == nil {
+		return nil, fmt.Errorf("streamer no inicializado")
+	}
+
+	mpv := a.streamer.GetPlayer()
+	if mpv == nil || !mpv.IsRunning() {
+		return nil, fmt.Errorf("mpv no está ejecutándose")
+	}
+
+	timePos, _ := mpv.GetTimePos()
+	duration, _ := mpv.GetDuration()
+	paused, _ := mpv.IsPaused()
+	volume, _ := mpv.GetVolume()
+
+	return &MPVPlaybackState{
+		TimePos:  timePos,
+		Duration: duration,
+		Paused:   paused,
+		Volume:   volume,
+	}, nil
 }
 
 // --- Métodos del catálogo de películas (YTS) ---
