@@ -81,10 +81,23 @@
   font-weight: 600;
 }
 
+.meta-runtime {
+  color: #aaa;
+  font-size: 0.9rem;
+}
+
 .detail-genres {
   font-size: 0.8rem;
   color: #888;
   margin-bottom: 12px;
+}
+
+.detail-description {
+  font-size: 0.9rem;
+  color: #bbb;
+  line-height: 1.6;
+  margin-top: 12px;
+  max-width: 600px;
 }
 
 .torrents-section {

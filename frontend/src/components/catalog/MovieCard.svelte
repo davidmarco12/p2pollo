@@ -13,7 +13,7 @@
     {/if}
     {#if movie.rating > 0}
       <span class="rating-badge">
-        <span class="star">&#9733;</span> {movie.rating}
+        <span class="star">&#9733;</span> {movie.rating.toFixed(1)}
       </span>
     {/if}
   </div>

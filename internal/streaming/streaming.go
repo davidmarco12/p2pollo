@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/davidmarco12/p2pollo/internal/config"
@@ -188,8 +189,14 @@ func (s *Service) startStreamInternal(ctx context.Context, magnetURI string, fil
 		s.mu.Unlock()
 		s.log.Infof("Subtítulos detectados: %d tracks", len(tracks))
 
-		// Pre-extraer subtítulos embebidos en background para que el primer click sea instantáneo.
-		go s.prewarmSubtitleCache(ctx, tmpPath, tracks)
+		// Estrategia: Pre-extraer subtítulos durante el tiempo de espera del buffer inicial.
+		// El usuario ya está esperando que descargue el buffer (200MB), así que aprovechamos
+		// ese tiempo para extraer subtítulos en background. Cuando el video esté listo,
+		// los subtítulos también lo estarán (click instantáneo).
+		if len(tracks) > 0 {
+			s.log.Infof("Pre-extrayendo subtítulos durante descarga del buffer inicial...")
+			go s.prewarmSubtitleCache(ctx, tmpPath, tracks)
+		}
 	case <-ctx.Done():
 		mgr.Stop()
 		return fmt.Errorf("streaming cancelado")
@@ -533,21 +540,41 @@ func (s *Service) GetSubtitleTracks() []SubtitleTrack {
 	return s.subtitleTracks
 }
 
-// prewarmSubtitleCache extrae todos los tracks embebidos en background para que
-// el primer click del usuario sea instantáneo (respuesta desde cache, sin ffmpeg).
+// prewarmSubtitleCache extrae todos los tracks embebidos en background de forma paralela
+// para que el primer click del usuario sea instantáneo (respuesta desde cache, sin ffmpeg).
 func (s *Service) prewarmSubtitleCache(ctx context.Context, tmpPath string, tracks []SubtitleTrack) {
 	ffmpegPath, err := exec.LookPath("ffmpeg")
 	if err != nil {
+		s.log.Warnf("ffmpeg no encontrado - subtítulos no se pre-extraerán")
 		return
 	}
 
+	// Filtrar solo embebidos
+	var embeddedTracks []SubtitleTrack
 	for _, track := range tracks {
-		if track.Type != "embedded" {
-			continue
+		if track.Type == "embedded" {
+			embeddedTracks = append(embeddedTracks, track)
 		}
+	}
+
+	if len(embeddedTracks) == 0 {
+		return
+	}
+
+	s.log.Infof("Pre-extrayendo %d subtítulos embebidos en paralelo (3 simultáneos)...", len(embeddedTracks))
+	startTime := time.Now()
+
+	// Paralelizar con semáforo (máximo 3 ffmpeg simultáneos para no sobrecargar CPU)
+	sem := make(chan struct{}, 3)
+	var wg sync.WaitGroup
+	completed := atomic.Int32{}
+
+	for _, track := range embeddedTracks {
+		track := track // capturar variable de loop
 
 		select {
 		case <-ctx.Done():
+			wg.Wait()
 			return
 		default:
 		}
@@ -561,18 +588,34 @@ func (s *Service) prewarmSubtitleCache(ctx context.Context, tmpPath string, trac
 			continue
 		}
 
-		mapArg := fmt.Sprintf("0:s:%d", track.Index)
-		cmd := exec.CommandContext(ctx, ffmpegPath, "-i", tmpPath, "-map", mapArg, "-f", "webvtt", "-v", "quiet", "pipe:1")
-		output, err := cmd.Output()
-		if err != nil || len(output) == 0 {
-			continue
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 
-		s.mu.Lock()
-		s.subtitleCache[cacheKey] = string(output)
-		s.mu.Unlock()
-		s.log.Debugf("Subtítulo pre-extraído: track %d (%d bytes)", track.Index, len(output))
+			sem <- struct{}{}        // adquirir slot
+			defer func() { <-sem }() // liberar slot
+
+			trackStart := time.Now()
+			mapArg := fmt.Sprintf("0:s:%d", track.Index)
+			cmd := exec.CommandContext(ctx, ffmpegPath, "-i", tmpPath, "-map", mapArg, "-f", "webvtt", "-v", "quiet", "pipe:1")
+			output, err := cmd.Output()
+			if err != nil || len(output) == 0 {
+				s.log.Warnf("Error pre-extrayendo subtítulo %d (%s): %v", track.Index, track.Language, err)
+				return
+			}
+
+			s.mu.Lock()
+			s.subtitleCache[cacheKey] = string(output)
+			s.mu.Unlock()
+
+			count := completed.Add(1)
+			s.log.Infof("✓ Pre-extraído %d/%d: %s (%d bytes) en %.2fs",
+				count, len(embeddedTracks), track.Language, len(output), time.Since(trackStart).Seconds())
+		}()
 	}
+
+	wg.Wait()
+	s.log.Infof("✓ Precalentamiento completado en %.2fs - todos los subtítulos listos", time.Since(startTime).Seconds())
 }
 
 // detectSubtitleTracks detecta subtítulos embebidos (ffprobe) y externos (.srt del torrent).
@@ -707,6 +750,9 @@ func (s *Service) serveEmbeddedSubtitle(w http.ResponseWriter, r *http.Request, 
 	if !found {
 		// Primera vez: extraer el VTT completo desde el inicio (sin -ss).
 		// Se cachea el resultado; el offset de seek se aplica en Go.
+		s.log.Warnf("⚠️ Subtítulo stream %d NO en cache - extrayendo con ffmpeg (puede tardar)", streamIndex)
+		startTime := time.Now()
+
 		ffmpegPath, err := exec.LookPath("ffmpeg")
 		if err != nil {
 			http.NotFound(w, r)
@@ -727,6 +773,10 @@ func (s *Service) serveEmbeddedSubtitle(w http.ResponseWriter, r *http.Request, 
 		s.mu.Lock()
 		s.subtitleCache[cacheKey] = cached
 		s.mu.Unlock()
+
+		s.log.Infof("✓ Subtítulo stream %d extraído en %.2fs (%d bytes)", streamIndex, time.Since(startTime).Seconds(), len(output))
+	} else {
+		s.log.Debugf("✓ Subtítulo stream %d servido desde cache (%d bytes)", streamIndex, len(cached))
 	}
 
 	// Ajustar timestamps al punto de seek actual (operación en memoria, instantánea).

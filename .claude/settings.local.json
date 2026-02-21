@@ -30,7 +30,8 @@
       "Bash(npm run build:*)",
       "Bash(grep:*)",
       "Bash(magick:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "WebFetch(domain:github.com)"
     ]
   }
 }

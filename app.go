@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/davidmarco12/p2pollo/internal/catalog"
 	"github.com/davidmarco12/p2pollo/internal/catalog/yts"
@@ -240,4 +241,71 @@ func moviesToCards(movies []catalog.Movie) []MovieCard {
 		}
 	}
 	return cards
+}
+
+// TorrentOption representa una opcion de descarga para el frontend
+type TorrentOption struct {
+	Hash       string `json:"hash"`
+	Quality    string `json:"quality"`
+	Type       string `json:"type"`
+	Size       string `json:"size"`
+	Seeds      int    `json:"seeds"`
+	Peers      int    `json:"peers"`
+	MagnetLink string `json:"magnetLink"`
+}
+
+// MovieDetailResult es el detalle completo de una pelicula para el frontend
+type MovieDetailResult struct {
+	MovieCard
+	Description string          `json:"description"`
+	Runtime     int             `json:"runtime"`
+	Torrents    []TorrentOption `json:"torrents"`
+}
+
+// GetMovieDetails obtiene el detalle completo de una pelicula incluyendo torrents.
+// El parametro movieJSON es el JSON de MovieCard serializado desde el frontend.
+func (a *App) GetMovieDetails(movieJSON string) (*MovieDetailResult, error) {
+	if a.catalog == nil {
+		return nil, nil
+	}
+
+	var card MovieCard
+	if err := json.Unmarshal([]byte(movieJSON), &card); err != nil {
+		return nil, err
+	}
+
+	movie := catalog.Movie{
+		ID:        card.ID,
+		ImdbID:    card.ImdbID,
+		Title:     card.Title,
+		Year:      card.Year,
+		Rating:    card.Rating,
+		PosterURL: card.PosterURL,
+		Genres:    card.Genres,
+	}
+
+	detail, err := a.catalog.Details(movie)
+	if err != nil {
+		return nil, err
+	}
+
+	torrents := make([]TorrentOption, len(detail.Torrents))
+	for i, t := range detail.Torrents {
+		torrents[i] = TorrentOption{
+			Hash:       t.Hash,
+			Quality:    t.Quality,
+			Type:       t.Type,
+			Size:       t.Size,
+			Seeds:      t.Seeds,
+			Peers:      t.Peers,
+			MagnetLink: t.MagnetLink,
+		}
+	}
+
+	return &MovieDetailResult{
+		MovieCard:   card,
+		Description: detail.Description,
+		Runtime:     detail.Runtime,
+		Torrents:    torrents,
+	}, nil
 }

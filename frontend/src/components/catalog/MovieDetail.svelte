@@ -28,11 +28,17 @@
         <div class="detail-meta">
           <span class="meta-year">{movie.year}</span>
           {#if movie.rating > 0}
-            <span class="meta-rating">&#9733; {movie.rating}</span>
+            <span class="meta-rating">&#9733; {movie.rating.toFixed(1)}</span>
+          {/if}
+          {#if movie.runtime > 0}
+            <span class="meta-runtime">{movie.runtime} min</span>
           {/if}
         </div>
         {#if movie.genres}
           <div class="detail-genres">{movie.genres}</div>
+        {/if}
+        {#if movie.description}
+          <div class="detail-description">{movie.description}</div>
         {/if}
       </div>
     </div>

@@ -7,12 +7,14 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/davidmarco12/p2pollo/internal/catalog"
+	"github.com/sirupsen/logrus"
 )
 
 // YTS implementa catalog.CatalogProvider scrapeando en.yts-official.org
@@ -20,6 +22,7 @@ type YTS struct {
 	baseURL  string
 	client   *http.Client
 	trackers []string
+	log      *logrus.Logger
 }
 
 // New crea una nueva instancia del proveedor YTS
@@ -27,12 +30,16 @@ func New(extraTrackers []string) *YTS {
 	trackers := append([]string{}, catalog.DefaultTrackers...)
 	trackers = append(trackers, extraTrackers...)
 
+	log := logrus.New()
+	log.SetLevel(logrus.DebugLevel)
+
 	return &YTS{
 		baseURL: "https://en.yts-official.org",
 		client: &http.Client{
 			Timeout: 20 * time.Second,
 		},
 		trackers: trackers,
+		log:      log,
 	}
 }
 
@@ -191,12 +198,19 @@ func (y *YTS) Details(movie catalog.Movie) (*catalog.MovieDetail, error) {
 		return nil, fmt.Errorf("error leyendo respuesta: %w", err)
 	}
 
+	y.log.Debugf("YTS AJAX response for %s: %s", movie.Title, string(body))
+
 	var data ajaxResponse
 	if err := json.Unmarshal(body, &data); err != nil {
 		return nil, fmt.Errorf("error parseando JSON: %w", err)
 	}
 
 	m := data.YTS.Data.Movie
+
+	y.log.Debugf("Parsed description_full: %q", m.DescriptionFull)
+	if data.TMDB != nil {
+		y.log.Debugf("TMDB overview: %q", data.TMDB.Overview)
+	}
 
 	// Usar TMDB para mejor metadata cuando este disponible
 	description := m.DescriptionFull
@@ -209,6 +223,8 @@ func (y *YTS) Details(movie catalog.Movie) (*catalog.MovieDetail, error) {
 			runtime = data.TMDB.Runtime
 		}
 	}
+
+	y.log.Infof("Final description for %s: %q (length: %d)", movie.Title, description, len(description))
 
 	// Construir torrents con magnet links
 	torrents := make([]catalog.Torrent, 0, len(m.Torrents))
@@ -232,6 +248,11 @@ func (y *YTS) Details(movie catalog.Movie) (*catalog.MovieDetail, error) {
 			MagnetLink: magnetLink,
 		})
 	}
+
+	// Ordenar torrents por seeds (descendente) - mejor ratio primero
+	sort.Slice(torrents, func(i, j int) bool {
+		return torrents[i].Seeds > torrents[j].Seeds
+	})
 
 	detail := &catalog.MovieDetail{
 		Movie:       movie,
