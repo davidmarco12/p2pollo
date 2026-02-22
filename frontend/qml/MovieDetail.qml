@@ -31,7 +31,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: "#1b2636"
+        color: "#0a0908"
 
         ColumnLayout {
             anchors.fill: parent
@@ -41,7 +41,7 @@ Item {
             Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 60
-                color: "#0f1923"
+                color: "#1a1613"
 
                 RowLayout {
                     anchors.fill: parent
@@ -56,8 +56,8 @@ Item {
                         onClicked: root.backRequested()
 
                         background: Rectangle {
-                            color: parent.hovered ? "#2a3f54" : "transparent"
-                            radius: 4
+                            color: parent.hovered ? "#2a2521" : "transparent"
+                            radius: 10
                         }
 
                         contentItem: Text {
@@ -109,7 +109,7 @@ Item {
 
                             Rectangle {
                                 anchors.fill: parent
-                                color: "#2a3f54"
+                                color: "#1a1613"
                                 visible: parent.status !== Image.Ready
                                 z: -1
 
@@ -130,7 +130,7 @@ Item {
                                 text: movie ? movie.title : ""
                                 font.pixelSize: 32
                                 font.weight: Font.Bold
-                                color: "#e0e0e0"
+                                color: "#f5f3f0"
                                 wrapMode: Text.WordWrap
                                 Layout.fillWidth: true
                             }
@@ -142,14 +142,16 @@ Item {
                                 Text {
                                     text: movie ? movie.year : ""
                                     font.pixelSize: 16
-                                    color: "#888"
+                                    color: "#8a837c"
                                 }
 
                                 // Rating
                                 Rectangle {
                                     width: 60
                                     height: 30
-                                    color: "#ffc107"
+                                    color: "#ff6b3533"
+                                    border.color: "#ff6b35"
+                                    border.width: 1
                                     radius: 4
 
                                     Text {
@@ -157,7 +159,7 @@ Item {
                                         text: movie ? "★ " + movie.rating.toFixed(1) : ""
                                         font.pixelSize: 14
                                         font.weight: Font.Bold
-                                        color: "#000"
+                                        color: "#ff6b35"
                                     }
                                 }
 
@@ -165,7 +167,7 @@ Item {
                                 Text {
                                     text: movieDetails ? movieDetails.runtime + " min" : ""
                                     font.pixelSize: 16
-                                    color: "#888"
+                                    color: "#8a837c"
                                     visible: movieDetails && movieDetails.runtime
                                 }
                             }
@@ -200,7 +202,7 @@ Item {
                             text: "Descargar"
                             font.pixelSize: 24
                             font.weight: Font.Bold
-                            color: "#e0e0e0"
+                            color: "#f5f3f0"
                         }
 
                         // Torrent list
@@ -238,7 +240,7 @@ Item {
                                             text: modelData.fileName || modelData.title || "Unknown"
                                             font.pixelSize: 14
                                             font.weight: Font.Medium
-                                            color: "#e0e0e0"
+                                            color: "#f5f3f0"
                                             wrapMode: Text.NoWrap
                                             elide: Text.ElideRight
                                             Layout.fillWidth: true
@@ -267,14 +269,14 @@ Item {
                                             Text {
                                                 text: modelData.type.toUpperCase()
                                                 font.pixelSize: 12
-                                                color: "#888"
+                                                color: "#8a837c"
                                             }
 
                                             // Size
                                             Text {
                                                 text: modelData.size
                                                 font.pixelSize: 12
-                                                color: "#888"
+                                                color: "#8a837c"
                                             }
 
                                             // Provider badge
@@ -307,7 +309,7 @@ Item {
                                                 delegate: Rectangle {
                                                     width: subtitleText.width + 12
                                                     height: 20
-                                                    color: "#2a3f54"
+                                                    color: "#1a1613"
                                                     radius: 3
                                                     border.color: "#444"
                                                     border.width: 1

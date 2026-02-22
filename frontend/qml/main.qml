@@ -9,7 +9,7 @@ ApplicationWindow {
     visible: true
     title: "p2pollo - P2P Streaming"
 
-    color: "#1b2636"
+    color: "#0a0908"
 
     // View states
     property string currentView: "home"
@@ -121,9 +121,17 @@ ApplicationWindow {
 
         property string errorMessage: ""
 
+        background: Rectangle {
+            color: "#1a1613"
+            radius: 10
+            border.color: "#ff6b3533"
+            border.width: 1
+        }
+
         contentItem: Text {
             text: errorDialog.errorMessage
-            color: "#f44336"
+            color: "#d4183d"
+            font.pixelSize: 14
             wrapMode: Text.WordWrap
         }
     }

@@ -11,7 +11,7 @@ Rectangle {
     signal searchRequested(string query)
     signal backClicked()
 
-    color: "#0f1923"
+    color: "#1a1613"
 
     RowLayout {
         anchors.fill: parent
@@ -27,8 +27,8 @@ Rectangle {
             onClicked: root.backClicked()
 
             background: Rectangle {
-                color: parent.hovered ? "#2a3f54" : "transparent"
-                radius: 4
+                color: parent.hovered ? "#2a2521" : "transparent"
+                radius: 10
             }
 
             contentItem: Text {
@@ -41,12 +41,24 @@ Rectangle {
         }
 
         // Logo/Title
-        Text {
-            text: "🍿 p2pollo"
-            font.pixelSize: 20
-            font.weight: Font.Bold
-            color: "#ff6b35"
+        RowLayout {
             visible: !root.showBackButton
+            spacing: 12
+
+            Image {
+                source: "qrc:/assets/images/output-estesi.png"
+                Layout.preferredWidth: 40
+                Layout.preferredHeight: 40
+                fillMode: Image.PreserveAspectFit
+                smooth: true
+            }
+
+            Text {
+                text: "p2pollo"
+                font.pixelSize: 20
+                font.weight: Font.Bold
+                color: "#f5f3f0"
+            }
 
             MouseArea {
                 anchors.fill: parent
@@ -59,10 +71,10 @@ Rectangle {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 40
-            color: "#2a3f54"
+            color: "#2a2521"
             radius: 20
-            border.color: searchInput.activeFocus ? "#ff6b35" : "transparent"
-            border.width: 2
+            border.color: searchInput.activeFocus ? "#ff6b35" : "#ff6b3533"
+            border.width: 1
 
             RowLayout {
                 anchors.fill: parent
@@ -73,7 +85,7 @@ Rectangle {
                 Text {
                     text: "🔍"
                     font.pixelSize: 16
-                    color: "#888"
+                    color: "#8a837c"
                 }
 
                 TextField {
@@ -82,7 +94,7 @@ Rectangle {
                     placeholderText: "Buscar películas..."
                     text: root.initialQuery
                     font.pixelSize: 14
-                    color: "#e0e0e0"
+                    color: "#f5f3f0"
 
                     background: Rectangle {
                         color: "transparent"
@@ -95,7 +107,7 @@ Rectangle {
                     }
 
                     // Style placeholder text
-                    placeholderTextColor: "#888"
+                    placeholderTextColor: "#8a837c"
                 }
 
                 // Search button
@@ -110,7 +122,7 @@ Rectangle {
                     }
 
                     background: Rectangle {
-                        color: parent.hovered ? "#ff8555" : "#ff6b35"
+                        color: parent.hovered ? "#ff8f4f" : "#ff6b35"
                         radius: 16
                         implicitWidth: 32
                         implicitHeight: 32
@@ -118,8 +130,9 @@ Rectangle {
 
                     contentItem: Text {
                         text: parent.text
-                        color: "#fff"
-                        font: parent.font
+                        color: "#0a0908"
+                        font.pixelSize: parent.font.pixelSize
+                        font.weight: Font.Medium
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
                     }

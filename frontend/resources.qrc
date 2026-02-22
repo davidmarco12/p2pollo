@@ -13,5 +13,8 @@
         <file>qml/components/MovieGrid.qml</file>
         <file>qml/components/SearchBar.qml</file>
         <file>qml/components/ProgressBar.qml</file>
+
+        <!-- Assets -->
+        <file alias="assets/images/output-estesi.png">src/assets/images/output-estesi.png</file>
     </qresource>
 </RCC>

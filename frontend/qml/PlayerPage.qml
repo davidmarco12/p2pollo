@@ -86,7 +86,7 @@ Item {
                                 return "Descargando buffer inicial... " + progress.percent + "%"
                             }
                             font.pixelSize: 16
-                            color: "#e0e0e0"
+                            color: "#f5f3f0"
                         }
 
                         // Progress info
@@ -94,7 +94,7 @@ Item {
                             Layout.alignment: Qt.AlignHCenter
                             text: progress && progress.peers > 0 ? progress.peers + " peers conectados" : ""
                             font.pixelSize: 14
-                            color: "#888"
+                            color: "#8a837c"
                             visible: text !== ""
                         }
 
@@ -102,7 +102,7 @@ Item {
                             Layout.alignment: Qt.AlignHCenter
                             text: progress && progress.speedMBps > 0 ? progress.speedMBps.toFixed(2) + " MB/s" : ""
                             font.pixelSize: 14
-                            color: "#888"
+                            color: "#8a837c"
                             visible: text !== ""
                         }
                     }
@@ -147,7 +147,7 @@ Item {
             Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: controlsVisible ? 80 : 0
-                color: "#0f1923"
+                color: "#1a1613"
                 visible: backend.isStreamReady && controlsVisible
                 opacity: controlsVisible ? 1.0 : 0.0
 
@@ -182,7 +182,7 @@ Item {
                             width: seekSlider.availableWidth
                             height: 4
                             radius: 2
-                            color: "#333"
+                            color: "#2a2521"
 
                             Rectangle {
                                 width: seekSlider.visualPosition * parent.width
@@ -199,7 +199,7 @@ Item {
                             height: 16
                             radius: 8
                             color: "#ff6b35"
-                            border.color: "#fff"
+                            border.color: "#f5f3f0"
                             border.width: 2
                         }
                     }
@@ -222,7 +222,7 @@ Item {
 
                             contentItem: Text {
                                 text: parent.text
-                                color: "#e0e0e0"
+                                color: "#f5f3f0"
                                 font: parent.font
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
@@ -242,7 +242,7 @@ Item {
 
                             contentItem: Text {
                                 text: parent.text
-                                color: "#e0e0e0"
+                                color: "#f5f3f0"
                                 font: parent.font
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
@@ -266,8 +266,9 @@ Item {
 
                             contentItem: Text {
                                 text: parent.text
-                                color: "#fff"
-                                font: parent.font
+                                color: "#0a0908"
+                                font.pixelSize: parent.font.pixelSize
+                                font.weight: Font.Medium
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
                             }
@@ -286,7 +287,7 @@ Item {
 
                             contentItem: Text {
                                 text: parent.text
-                                color: "#e0e0e0"
+                                color: "#f5f3f0"
                                 font: parent.font
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
@@ -299,7 +300,7 @@ Item {
                         Text {
                             text: formatTime(mpvPlayer.position) + " / " + formatTime(mpvPlayer.duration)
                             font.pixelSize: 14
-                            color: "#e0e0e0"
+                            color: "#f5f3f0"
                         }
 
                         // Volume control
@@ -327,7 +328,7 @@ Item {
                             Text {
                                 text: Math.round(volumeSlider.value) + "%"
                                 font.pixelSize: 12
-                                color: "#888"
+                                color: "#8a837c"
                                 Layout.preferredWidth: 40
                             }
                         }
@@ -349,7 +350,7 @@ Item {
 
                             contentItem: Text {
                                 text: parent.text
-                                color: mpvPlayer.subtitlesEnabled ? "#fff" : "#e0e0e0"
+                                color: mpvPlayer.subtitlesEnabled ? "#0a0908" : "#f5f3f0"
                                 font: parent.font
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
@@ -427,7 +428,7 @@ Item {
 
                             contentItem: Text {
                                 text: parent.text
-                                color: "#e0e0e0"
+                                color: "#f5f3f0"
                                 font: parent.font
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter

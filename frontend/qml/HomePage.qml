@@ -37,8 +37,8 @@ Item {
                 Text {
                     text: "Películas Populares"
                     font.pixelSize: 24
-                    font.weight: Font.Bold
-                    color: "#e0e0e0"
+                    font.weight: Font.Medium
+                    color: "#f5f3f0"
                 }
 
                 // Loading indicator or movie grid

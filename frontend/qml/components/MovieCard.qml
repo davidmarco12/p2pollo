@@ -21,8 +21,8 @@ Rectangle {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 240
-            color: "#2a3f54"
-            radius: 8
+            color: "#1a1613"
+            radius: 10
             clip: true
 
             Image {
@@ -37,7 +37,7 @@ Rectangle {
                 // Loading placeholder
                 Rectangle {
                     anchors.fill: parent
-                    color: "#2a3f54"
+                    color: "#1a1613"
                     visible: parent.status !== Image.Ready
                     z: -1
 
@@ -58,25 +58,51 @@ Rectangle {
                 anchors.margins: 8
                 width: 50
                 height: 24
-                color: "#ffc107"
-                radius: 4
+                color: "#ff6b3533"
+                radius: 6
+                border.color: "#ff6b35"
+                border.width: 1
                 visible: movie && movie.rating > 0
 
-                Text {
+                RowLayout {
                     anchors.centerIn: parent
-                    text: movie ? "★ " + movie.rating.toFixed(1) : ""
-                    font.pixelSize: 11
-                    font.weight: Font.Bold
-                    color: "#000"
+                    spacing: 2
+
+                    Text {
+                        text: "★"
+                        font.pixelSize: 12
+                        color: "#ff6b35"
+                    }
+
+                    Text {
+                        text: movie ? movie.rating.toFixed(1) : ""
+                        font.pixelSize: 11
+                        font.weight: Font.Medium
+                        color: "#ff6b35"
+                    }
                 }
             }
 
-            // Hover overlay
+            // Hover overlay with gradient
             Rectangle {
                 anchors.fill: parent
-                color: "#000"
-                opacity: mouseArea.containsMouse ? 0.3 : 0
-                Behavior on opacity { NumberAnimation { duration: 150 } }
+                gradient: Gradient {
+                    GradientStop { position: 0.0; color: "#00000000" }
+                    GradientStop { position: 0.6; color: "#66000000" }
+                    GradientStop { position: 1.0; color: "#cc000000" }
+                }
+                opacity: mouseArea.containsMouse ? 1.0 : 0
+                Behavior on opacity { NumberAnimation { duration: 300 } }
+
+                // Play icon on hover
+                Text {
+                    anchors.centerIn: parent
+                    text: "▶"
+                    font.pixelSize: 48
+                    color: "#ff6b35"
+                    opacity: mouseArea.containsMouse ? 1.0 : 0
+                    Behavior on opacity { NumberAnimation { duration: 300 } }
+                }
             }
 
             // Click area
@@ -105,7 +131,7 @@ Rectangle {
                 text: movie ? movie.title : ""
                 font.pixelSize: 13
                 font.weight: Font.Medium
-                color: "#e0e0e0"
+                color: "#f5f3f0"
                 wrapMode: Text.WordWrap
                 maximumLineCount: 2
                 elide: Text.ElideRight
@@ -115,7 +141,7 @@ Rectangle {
             Text {
                 text: movie ? movie.year : ""
                 font.pixelSize: 11
-                color: "#888"
+                color: "#8a837c"
             }
         }
     }

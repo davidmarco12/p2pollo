@@ -45,8 +45,8 @@ Item {
                 Text {
                     text: 'Resultados para "' + root.searchQuery + '"'
                     font.pixelSize: 24
-                    font.weight: Font.Bold
-                    color: "#e0e0e0"
+                    font.weight: Font.Medium
+                    color: "#f5f3f0"
                 }
 
                 // Loading indicator or movie grid
@@ -66,7 +66,7 @@ Item {
                         anchors.centerIn: parent
                         text: "No se encontraron resultados"
                         font.pixelSize: 16
-                        color: "#888"
+                        color: "#8a837c"
                         visible: !backend.isLoading && movieGrid.count === 0
                     }
 
