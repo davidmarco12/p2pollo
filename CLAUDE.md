@@ -21,8 +21,14 @@ p2pollo is a P2P streaming desktop application written in Go with Wails (Go back
 
 ## Build & Development Commands
 
+**IMPORTANTE:** libmpv.dll debe estar en el PATH para que la aplicación funcione.
+
 ```bash
-# Wails development (hot-reload)
+# Wails development (hot-reload) - WINDOWS
+dev.bat                  # Runs wails dev with libmpv.dll in PATH (recommended)
+
+# Wails development (manual)
+# Agregar al PATH primero: set "PATH=%CD%;%CD%\lib;%PATH%"
 wails dev                # Runs app in dev mode with hot-reload
 
 # Wails build (production)
@@ -98,11 +104,20 @@ Los métodos exportados de `App` se exponen automáticamente al frontend:
 
 - `wailsapp/wails/v2` — Desktop GUI framework (Go + webview)
 - `anacrolix/torrent` — BitTorrent protocol implementation
+- `gen2brain/go-mpv` — Go bindings for libmpv (purego, no cgo needed)
 - `svelte` + `vite` — Frontend framework and build tool
 - `spf13/viper` — Configuration management
 - `sirupsen/logrus` — Structured logging
 - `stretchr/testify` — Test assertions
-- **mpv** — Media player (external binary, controlled via IPC)
+
+### libmpv Integration
+
+La aplicación usa **libmpv** (embedded) en lugar de mpv como proceso separado:
+- `libmpv.dll` (115MB) debe estar en el PATH o en el directorio del ejecutable
+- Ubicación: `lib/libmpv-2.dll` (copiar como `libmpv.dll`)
+- Renderizado embebido en la UI de Wails usando HWND (Windows)
+- Controles desde Svelte via bindings Go → libmpv API
+- **Usar `dev.bat` para ejecutar con libmpv.dll en el PATH**
 
 ## Configuration
 

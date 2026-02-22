@@ -108,7 +108,8 @@ func (a *App) PlayMagnet(magnetLink string) error {
 	}
 
 	a.streamer.Stop()
-	a.streamer.StartStreamAsync(magnetLink, -1)
+	// Wails legacy: usar mpv externo (headless = false)
+	a.streamer.StartStreamAsync(magnetLink, -1, false)
 	return nil
 }
 
@@ -196,8 +197,9 @@ type TrackInfo struct {
 	Selected bool   `json:"selected"` // Si está actualmente seleccionado
 }
 
-// MPVCommand envía un comando genérico a mpv via IPC
-func (a *App) MPVCommand(cmd string, args ...interface{}) error {
+// MPVCommand envía un comando genérico a mpv via libmpv
+// Recibe un array de argumentos: ["comando", arg1, arg2, ...]
+func (a *App) MPVCommand(args []interface{}) error {
 	if a.streamer == nil {
 		return fmt.Errorf("streamer no inicializado")
 	}
@@ -207,7 +209,18 @@ func (a *App) MPVCommand(cmd string, args ...interface{}) error {
 		return fmt.Errorf("mpv no está ejecutándose")
 	}
 
-	return mpv.Command(cmd, args...)
+	// El primer elemento es el comando, el resto son argumentos
+	if len(args) == 0 {
+		return fmt.Errorf("comando vacío")
+	}
+
+	cmd, ok := args[0].(string)
+	if !ok {
+		return fmt.Errorf("el primer argumento debe ser el nombre del comando (string)")
+	}
+
+	// Pasar el resto de argumentos al Command
+	return mpv.Command(cmd, args[1:]...)
 }
 
 // GetMPVProperty obtiene el valor de una propiedad de mpv

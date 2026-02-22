@@ -32,7 +32,22 @@
       "Bash(magick:*)",
       "Bash(python3:*)",
       "WebFetch(domain:github.com)",
-      "Bash(wails build:*)"
+      "Bash(wails build:*)",
+      "Bash(go version:*)",
+      "Bash(export PATH=\"/d/Qt/6.10.2/mingw_64/bin:$PATH\")",
+      "Bash(qmake:*)",
+      "Bash(export PATH=\"/d/Qt/6.10.2/mingw_64/bin:/d/Qt/Tools/mingw1310_64/bin:/d/Qt/Tools/CMake_64/bin:/d/Qt/Tools/Ninja:$PATH\")",
+      "Bash(cmake --build:*)",
+      "Bash(start \"p2pollo\" /D \"frontend\\\\build\" \"frontend\\\\build\\\\p2pollo.exe\")",
+      "Bash(export PATH=\"/d/Qt/6.10.2/mingw_64/bin:/d/Qt/Tools/mingw1310_64/bin:/d/Qt/Tools/CMake_64/bin:$PATH\")",
+      "Bash(where:*)",
+      "Bash(\"D:/Qt/Tools/CMake_64/bin/cmake.exe\":*)",
+      "Bash(taskkill:*)",
+      "Bash(\"/d/Qt/6.10.2/mingw_64/bin/windeployqt.exe\" p2pollo.exe --qmldir ../qml)",
+      "Bash(make:*)",
+      "Bash(d:/Proyectos/p2pollo/frontend/build/check_renderer.bat:*)",
+      "Bash(d:/Proyectos/p2pollo/frontend/build/run_opengl.bat:*)",
+      "Bash(cmd.exe /c \"set PATH=D:\\\\Qt\\\\6.10.2\\\\mingw_64\\\\bin;D:\\\\Qt\\\\Tools\\\\mingw1310_64\\\\bin;%PATH% && cd /d D:\\\\Proyectos\\\\p2pollo\\\\frontend\\\\build && mingw32-make\")"
     ]
   }
 }

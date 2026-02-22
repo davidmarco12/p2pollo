@@ -517,6 +517,7 @@ func (m *Manager) monitor(ctx context.Context, bufferBytes int64) {
 			m.lastBytes.Store(m.headWritten.Load())
 			m.lastTime.Store(time.Now().UnixNano())
 
+			// Listo cuando moov atom + buffer inicial estén descargados (mpv puede streaming)
 			if m.moovReady.Load() && m.headWritten.Load() >= bufferBytes {
 				m.syncFile()
 				select {

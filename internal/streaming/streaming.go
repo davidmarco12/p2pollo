@@ -9,19 +9,21 @@ import (
 	"time"
 
 	"github.com/davidmarco12/p2pollo/internal/config"
+	"github.com/davidmarco12/p2pollo/internal/httpserver"
 	"github.com/davidmarco12/p2pollo/internal/player"
 	"github.com/davidmarco12/p2pollo/internal/stream"
 	"github.com/davidmarco12/p2pollo/internal/torrent"
 	"github.com/sirupsen/logrus"
 )
 
-// Service coordina el cliente torrent, el stream manager y mpv.
+// Service coordina el cliente torrent, el stream manager, mpv y el servidor HTTP.
 type Service struct {
-	cfg    *config.Config
-	client *torrent.Client
-	mgr    *stream.Manager
-	player *player.MPV
-	log    *logrus.Logger
+	cfg        *config.Config
+	client     *torrent.Client
+	mgr        *stream.Manager
+	player     player.Player
+	httpServer *httpserver.Server
+	log        *logrus.Logger
 
 	// Ruta al archivo temporal que se está descargando
 	tmpPath string
@@ -33,6 +35,9 @@ type Service struct {
 	preparing     bool
 	streamErr     error
 	prepareCancel context.CancelFunc
+
+	// Modo headless (sin reproductor externo, solo descarga)
+	headless bool
 
 	mu sync.RWMutex
 }
@@ -51,27 +56,37 @@ func NewService(cfg *config.Config) (*Service, error) {
 		log.SetLevel(logrus.DebugLevel)
 	}
 
-	// Crear controlador mpv (pero no iniciarlo aún)
-	mpv, err := player.New(cfg)
+	// Crear controlador libmpv (pero no iniciarlo aún)
+	mpv, err := player.NewLibMPV(cfg)
 	if err != nil {
 		client.Close()
-		return nil, fmt.Errorf("error creando controlador mpv: %w", err)
+		return nil, fmt.Errorf("error creando controlador libmpv: %w", err)
+	}
+
+	// Crear e iniciar servidor HTTP para video embebido
+	httpSrv := httpserver.New(log)
+	if err := httpSrv.Start(); err != nil {
+		client.Close()
+		return nil, fmt.Errorf("error iniciando servidor HTTP: %w", err)
 	}
 
 	return &Service{
-		cfg:    cfg,
-		client: client,
-		player: mpv,
-		log:    log,
+		cfg:        cfg,
+		client:     client,
+		player:     mpv,
+		httpServer: httpSrv,
+		log:        log,
 	}, nil
 }
 
 // StartStreamAsync inicia el streaming en segundo plano.
 // Descarga el buffer inicial del torrent y luego carga el archivo en mpv.
-func (s *Service) StartStreamAsync(magnetURI string, fileIndex int) {
+// Si headless es true, solo descarga el archivo sin iniciar reproductor externo.
+func (s *Service) StartStreamAsync(magnetURI string, fileIndex int, headless bool) {
 	s.mu.Lock()
 	s.preparing = true
 	s.streamErr = nil
+	s.headless = headless
 	ctx, cancel := context.WithCancel(context.Background())
 	s.prepareCancel = cancel
 	s.mu.Unlock()
@@ -127,8 +142,28 @@ func (s *Service) startStreamInternal(ctx context.Context, magnetURI string, fil
 	case tmpPath := <-mgr.Ready():
 		s.mu.Lock()
 		s.tmpPath = tmpPath
+		headless := s.headless
 		s.mu.Unlock()
+
+		if headless {
+			// Modo headless: solo descargar, no iniciar reproductor
+			s.log.Infof("Buffer listo (headless mode), archivo disponible en: %s", tmpPath)
+			return nil
+		}
+
+		// Modo normal: iniciar mpv
 		s.log.Infof("Buffer listo, iniciando mpv con archivo: %s", tmpPath)
+
+		// Configurar HWND para renderizado embebido (solo en libmpv)
+		if libmpv, ok := s.player.(*player.LibMPV); ok {
+			hwnd, err := player.GetMainWindowHWND()
+			if err == nil && hwnd != 0 {
+				libmpv.SetHWND(hwnd)
+				s.log.Infof("Renderizando en ventana principal (HWND: %d)", hwnd)
+			} else {
+				s.log.Warn("No se pudo obtener HWND, usando ventana separada")
+			}
+		}
 
 		// AHORA sí iniciar mpv (solo cuando el buffer esté listo)
 		if err := s.player.Start(); err != nil {
@@ -193,10 +228,18 @@ func (s *Service) GetTorrentInfo() torrent.TorrentInfo {
 }
 
 // GetPlayer retorna el controlador mpv para que app.go pueda exponer comandos
-func (s *Service) GetPlayer() *player.MPV {
+func (s *Service) GetPlayer() player.Player {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.player
+}
+
+// GetTmpPath retorna la ruta al archivo temporal que se está descargando
+// (para uso de mpv externo en Qt/QML)
+func (s *Service) GetTmpPath() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.tmpPath
 }
 
 // Stop detiene el streaming, mpv y limpia recursos

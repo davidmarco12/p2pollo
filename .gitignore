@@ -18,10 +18,11 @@ vendor/
 /dist/
 build/bin/
 
-# Wails
+# FrontEnd
 frontend/node_modules/
 frontend/dist/
 frontend/wailsjs/
+frontend/build/
 
 # IDE
 .idea/
@@ -30,6 +31,7 @@ frontend/wailsjs/
 *.swo
 *~
 .DS_Store
+.claude
 
 # Config sensible
 config/local.yaml

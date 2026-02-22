@@ -1,0 +1,17 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource>
+        <!-- Main QML files -->
+        <file>qml/main.qml</file>
+        <file>qml/HomePage.qml</file>
+        <file>qml/SearchPage.qml</file>
+        <file>qml/MovieDetail.qml</file>
+        <file>qml/PlayerPage.qml</file>
+
+        <!-- Components -->
+        <file>qml/components/MovieCard.qml</file>
+        <file>qml/components/MovieGrid.qml</file>
+        <file>qml/components/SearchBar.qml</file>
+        <file>qml/components/ProgressBar.qml</file>
+    </qresource>
+</RCC>
