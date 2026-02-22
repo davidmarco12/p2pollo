@@ -238,6 +238,18 @@ func (y *YTS) Details(movie catalog.Movie) (*catalog.MovieDetail, error) {
 		seen[key] = true
 
 		magnetLink := catalog.BuildMagnetLink(t.Hash, movie.Title, y.trackers)
+
+		// Construir nombre del archivo a partir de metadata
+		fileName := fmt.Sprintf("%s.%d.%s.%s",
+			strings.ReplaceAll(movie.Title, " ", "."),
+			movie.Year,
+			t.Quality,
+			t.Type,
+		)
+
+		// TODO: Scrapear subtítulos disponibles del sitio YTS
+		subtitles := []string{}
+
 		torrents = append(torrents, catalog.Torrent{
 			Hash:       t.Hash,
 			Quality:    t.Quality,
@@ -246,6 +258,8 @@ func (y *YTS) Details(movie catalog.Movie) (*catalog.MovieDetail, error) {
 			Seeds:      t.Seeds,
 			Peers:      t.Peers,
 			MagnetLink: magnetLink,
+			FileName:   fileName,
+			Subtitles:  subtitles,
 		})
 	}
 

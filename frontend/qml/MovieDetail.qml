@@ -202,7 +202,7 @@ Item {
 
                             delegate: Rectangle {
                                 Layout.fillWidth: true
-                                height: 80
+                                height: 110
                                 color: torrentMouseArea.containsMouse ? "#2a3f54" : "#0f1923"
                                 radius: 8
                                 border.color: "#444"
@@ -224,7 +224,18 @@ Item {
 
                                     ColumnLayout {
                                         Layout.fillWidth: true
-                                        spacing: 4
+                                        spacing: 8
+
+                                        // Filename title
+                                        Text {
+                                            text: modelData.fileName || modelData.title || "Unknown"
+                                            font.pixelSize: 14
+                                            font.weight: Font.Medium
+                                            color: "#e0e0e0"
+                                            wrapMode: Text.NoWrap
+                                            elide: Text.ElideRight
+                                            Layout.fillWidth: true
+                                        }
 
                                         RowLayout {
                                             spacing: 12
@@ -278,27 +289,62 @@ Item {
                                             }
                                         }
 
-                                        // Seeds and peers
-                                        Text {
-                                            text: "🌱 " + modelData.seeds + " seeds  •  👥 " + modelData.peers + " peers"
-                                            font.pixelSize: 12
-                                            color: "#aaa"
+                                        // Subtitles row
+                                        Flow {
+                                            Layout.fillWidth: true
+                                            spacing: 6
+                                            visible: modelData.subtitles && modelData.subtitles.length > 0
+
+                                            Repeater {
+                                                model: modelData.subtitles || []
+                                                delegate: Rectangle {
+                                                    width: subtitleText.width + 12
+                                                    height: 20
+                                                    color: "#2a3f54"
+                                                    radius: 3
+                                                    border.color: "#444"
+                                                    border.width: 1
+
+                                                    Text {
+                                                        id: subtitleText
+                                                        anchors.centerIn: parent
+                                                        text: modelData
+                                                        font.pixelSize: 10
+                                                        color: "#aaa"
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
 
-                                    // Play button
-                                    Rectangle {
-                                        width: 100
-                                        height: 40
-                                        color: "#ff6b35"
-                                        radius: 6
+                                    // Right column: Play button + Seeds/Peers
+                                    ColumnLayout {
+                                        Layout.alignment: Qt.AlignTop
+                                        spacing: 8
 
+                                        // Play button
+                                        Rectangle {
+                                            width: 100
+                                            height: 40
+                                            color: "#ff6b35"
+                                            radius: 6
+
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: "▶ Reproducir"
+                                                font.pixelSize: 14
+                                                font.weight: Font.Bold
+                                                color: "#fff"
+                                            }
+                                        }
+
+                                        // Seeds and peers
                                         Text {
-                                            anchors.centerIn: parent
-                                            text: "▶ Reproducir"
-                                            font.pixelSize: 14
-                                            font.weight: Font.Bold
-                                            color: "#fff"
+                                            text: "🌱 " + modelData.seeds + " seeds\n👥 " + modelData.peers + " peers"
+                                            font.pixelSize: 11
+                                            color: "#aaa"
+                                            horizontalAlignment: Text.AlignHCenter
+                                            Layout.alignment: Qt.AlignHCenter
                                         }
                                     }
                                 }

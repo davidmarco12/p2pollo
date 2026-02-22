@@ -29,13 +29,15 @@ type MovieDetail struct {
 
 // Torrent representa una opcion de descarga para una pelicula
 type Torrent struct {
-	Hash       string `json:"hash"`
-	Quality    string `json:"quality"`
-	Type       string `json:"type"`
-	Size       string `json:"size"`
-	Seeds      int    `json:"seeds"`
-	Peers      int    `json:"peers"`
-	MagnetLink string `json:"magnetLink"`
+	Hash       string   `json:"hash"`
+	Quality    string   `json:"quality"`
+	Type       string   `json:"type"`
+	Size       string   `json:"size"`
+	Seeds      int      `json:"seeds"`
+	Peers      int      `json:"peers"`
+	MagnetLink string   `json:"magnetLink"`
+	FileName   string   `json:"fileName"`   // Nombre del archivo construido
+	Subtitles  []string `json:"subtitles"`  // Idiomas de subtítulos disponibles
 }
 
 // CatalogProvider es la interfaz para proveedores de catalogo de peliculas

@@ -199,14 +199,16 @@ type MovieDetailRequest struct {
 }
 
 type TorrentOption struct {
-	Hash       string `json:"hash"`
-	Quality    string `json:"quality"`
-	Type       string `json:"type"`
-	Size       string `json:"size"`
-	Seeds      int    `json:"seeds"`
-	Peers      int    `json:"peers"`
-	MagnetLink string `json:"magnetLink"`
-	Provider   string `json:"provider"` // rargb, thepiratebay, yts
+	Hash       string   `json:"hash"`
+	Quality    string   `json:"quality"`
+	Type       string   `json:"type"`
+	Size       string   `json:"size"`
+	Seeds      int      `json:"seeds"`
+	Peers      int      `json:"peers"`
+	MagnetLink string   `json:"magnetLink"`
+	Provider   string   `json:"provider"`   // rargb, thepiratebay, yts
+	FileName   string   `json:"fileName"`   // Nombre del archivo
+	Subtitles  []string `json:"subtitles"`  // Idiomas de subtítulos
 }
 
 type MovieDetailResponse struct {
@@ -273,6 +275,8 @@ func (s *Server) handleGetMovieDetails(c *gin.Context) {
 			Peers:      result.Leechers,
 			MagnetLink: result.MagnetLink,
 			Provider:   result.Source,
+			FileName:   result.Name, // Usar el nombre completo del torrent
+			Subtitles:  result.Subtitles, // Subtítulos si están disponibles
 		})
 	}
 

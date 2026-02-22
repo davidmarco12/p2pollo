@@ -372,13 +372,16 @@ func moviesToCards(movies []catalog.Movie) []MovieCard {
 
 // TorrentOption representa una opcion de descarga para el frontend
 type TorrentOption struct {
-	Hash       string `json:"hash"`
-	Quality    string `json:"quality"`
-	Type       string `json:"type"`
-	Size       string `json:"size"`
-	Seeds      int    `json:"seeds"`
-	Peers      int    `json:"peers"`
-	MagnetLink string `json:"magnetLink"`
+	Hash       string   `json:"hash"`
+	Quality    string   `json:"quality"`
+	Type       string   `json:"type"`
+	Size       string   `json:"size"`
+	Seeds      int      `json:"seeds"`
+	Peers      int      `json:"peers"`
+	MagnetLink string   `json:"magnetLink"`
+	FileName   string   `json:"fileName"`
+	Subtitles  []string `json:"subtitles"`
+	Provider   string   `json:"provider"`
 }
 
 // MovieDetailResult es el detalle completo de una pelicula para el frontend
@@ -426,6 +429,9 @@ func (a *App) GetMovieDetails(movieJSON string) (*MovieDetailResult, error) {
 			Seeds:      t.Seeds,
 			Peers:      t.Peers,
 			MagnetLink: t.MagnetLink,
+			FileName:   t.FileName,
+			Subtitles:  t.Subtitles,
+			Provider:   "YTS",  // Todos vienen de YTS en este caso
 		}
 	}
 
