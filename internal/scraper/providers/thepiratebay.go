@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/davidmarco12/p2pollo/internal/scraper"
+	"p2pollo/internal/scraper"
 )
 
 // tpbDefaultTrackers son los trackers que The Pirate Bay embebe en sus magnet links.

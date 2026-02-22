@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	mpv "github.com/gen2brain/go-mpv"
-	"github.com/davidmarco12/p2pollo/internal/config"
+	"p2pollo/internal/config"
 	"github.com/sirupsen/logrus"
 )
 

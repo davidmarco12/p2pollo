@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/davidmarco12/p2pollo/internal/scraper"
+	"p2pollo/internal/scraper"
 )
 
 // Rargb implementa el proveedor de búsqueda para rargb.to.

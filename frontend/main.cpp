@@ -20,7 +20,6 @@ int main(int argc, char *argv[])
 
     // Set application metadata
     app.setOrganizationName("p2pollo");
-    app.setOrganizationDomain("github.com/davidmarco12");
     app.setApplicationName("p2pollo");
     app.setApplicationVersion("1.0.0");
 

@@ -1,4 +1,4 @@
-module github.com/davidmarco12/p2pollo
+module p2pollo
 
 go 1.25.4
 

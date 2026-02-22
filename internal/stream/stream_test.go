@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/davidmarco12/p2pollo/internal/config"
-	"github.com/davidmarco12/p2pollo/internal/torrent"
+	"p2pollo/internal/config"
+	"p2pollo/internal/torrent"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

@@ -13,7 +13,7 @@ import (
 	"github.com/bogdanfinn/tls-client/profiles"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/davidmarco12/p2pollo/internal/scraper"
+	"p2pollo/internal/scraper"
 )
 
 // mirrors son dominios alternativos de 1337x.

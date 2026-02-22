@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/davidmarco12/p2pollo/internal/catalog"
+	"p2pollo/internal/catalog"
 	"github.com/gin-gonic/gin"
 )
 

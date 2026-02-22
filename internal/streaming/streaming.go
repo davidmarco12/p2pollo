@@ -8,11 +8,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/davidmarco12/p2pollo/internal/config"
-	"github.com/davidmarco12/p2pollo/internal/httpserver"
-	"github.com/davidmarco12/p2pollo/internal/player"
-	"github.com/davidmarco12/p2pollo/internal/stream"
-	"github.com/davidmarco12/p2pollo/internal/torrent"
+	"p2pollo/internal/config"
+	"p2pollo/internal/httpserver"
+	"p2pollo/internal/player"
+	"p2pollo/internal/stream"
+	"p2pollo/internal/torrent"
 	"github.com/sirupsen/logrus"
 )
 

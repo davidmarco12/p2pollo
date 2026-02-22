@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/davidmarco12/p2pollo/internal/catalog"
+	"p2pollo/internal/catalog"
 	"github.com/sirupsen/logrus"
 )
 

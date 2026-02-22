@@ -9,7 +9,7 @@ import (
 	libtorrent "github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/metainfo"
 	"github.com/anacrolix/torrent/storage"
-	"github.com/davidmarco12/p2pollo/internal/config"
+	"p2pollo/internal/config"
 	"github.com/sirupsen/logrus"
 )
 
@@ -74,7 +74,7 @@ func NewWithOptions(cfg *config.Config, lowMemory bool) (*Client, error) {
 	)
 
 	// Identidad del cliente visible para otros peers (qBittorrent, trackers, etc.)
-	// Por defecto anacrolix usa el path del módulo Go (github.com/davidmarco12/p2pollo...).
+	// Por defecto anacrolix usa el path del módulo Go (p2pollo...).
 	clientCfg.ExtendedHandshakeClientVersion = "p2pollo"
 	clientCfg.Bep20 = "-p2p001-" // 8 chars: prefijo BEP 20 en el peer ID
 	clientCfg.HTTPUserAgent = "p2pollo/1.0"
