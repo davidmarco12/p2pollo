@@ -72,7 +72,22 @@ func (l *LibMPV) Start() error {
 	// Configurar opciones de mpv
 	l.mpv.SetOptionString("keep-open", "yes")
 	l.mpv.SetOptionString("cache", "yes")
-	l.mpv.SetOptionString("cache-secs", "120")
+	l.mpv.SetOptionString("cache-secs", "10")  // Reducido de 120 a 10 para streaming
+
+	// Opciones de streaming para evitar errores de decodificación
+	// Limitar buffer del demuxer para evitar lecturas más allá de lo descargado
+	l.mpv.SetOptionString("demuxer-max-bytes", "5M")
+	l.mpv.SetOptionString("demuxer-max-back-bytes", "5M")
+	l.mpv.SetOptionString("demuxer-readahead-secs", "5")  // Solo 5 segundos de readahead
+
+	// Deshabilitar seeks de alta precisión que pueden leer partes no descargadas
+	l.mpv.SetOptionString("hr-seek", "no")
+	l.mpv.SetOptionString("hr-seek-framedrop", "no")
+
+	// Deshabilitar pre-carga de índices que puede causar seeks al final
+	l.mpv.SetOptionString("index", "no")
+
+	l.log.Info("Opciones de streaming configuradas para evitar lecturas adelantadas")
 
 	// Configurar ventana de mpv (separada)
 	// Nota: El embedding en Wails/WebView2 es complejo debido a la arquitectura de renderizado.

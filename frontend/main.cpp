@@ -3,6 +3,8 @@
 #include <QQmlContext>
 #include <QIcon>
 #include <QQuickWindow>
+#include <QNetworkDiskCache>
+#include <QStandardPaths>
 #include "backend.h"
 #include "mpvobject.h"
 
@@ -28,6 +30,13 @@ int main(int argc, char *argv[])
 
     // Create QML engine
     QQmlApplicationEngine engine;
+
+    // Configure network cache for images (50 MB cache)
+    QNetworkDiskCache *diskCache = new QNetworkDiskCache(&engine);
+    QString cachePath = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    diskCache->setCacheDirectory(cachePath + "/images");
+    diskCache->setMaximumCacheSize(50 * 1024 * 1024); // 50 MB
+    engine.networkAccessManager()->setCache(diskCache);
 
     // Expose backend to QML
     engine.rootContext()->setContextProperty("backend", &backend);

@@ -27,7 +27,7 @@ ApplicationWindow {
                 property: "opacity"
                 from: 0
                 to: 1
-                duration: 200
+                duration: 150
             }
         }
         pushExit: Transition {
@@ -35,7 +35,23 @@ ApplicationWindow {
                 property: "opacity"
                 from: 1
                 to: 0
-                duration: 200
+                duration: 150
+            }
+        }
+        popEnter: Transition {
+            PropertyAnimation {
+                property: "opacity"
+                from: 0
+                to: 1
+                duration: 150
+            }
+        }
+        popExit: Transition {
+            PropertyAnimation {
+                property: "opacity"
+                from: 1
+                to: 0
+                duration: 150
             }
         }
     }
@@ -44,12 +60,15 @@ ApplicationWindow {
     Component {
         id: homePageComponent
         HomePage {
+            StackView.onActivated: {
+                // Refresh if needed
+            }
             onMovieSelected: function(movie) {
                 selectedMovie = movie
-                stackView.push(movieDetailComponent)
+                stackView.push(movieDetailComponent, StackView.Immediate)
             }
             onSearchRequested: function(query) {
-                stackView.push(searchPageComponent, { "searchQuery": query })
+                stackView.push(searchPageComponent, { "searchQuery": query }, StackView.Immediate)
             }
         }
     }
@@ -60,10 +79,10 @@ ApplicationWindow {
         SearchPage {
             onMovieSelected: function(movie) {
                 selectedMovie = movie
-                stackView.push(movieDetailComponent)
+                stackView.push(movieDetailComponent, StackView.Immediate)
             }
             onBackRequested: {
-                stackView.pop()
+                stackView.pop(StackView.Immediate)
             }
         }
     }
@@ -74,10 +93,10 @@ ApplicationWindow {
         MovieDetail {
             movie: selectedMovie
             onPlayRequested: function(magnetLink) {
-                stackView.push(playerPageComponent, { "magnetLink": magnetLink })
+                stackView.push(playerPageComponent, { "magnetLink": magnetLink }, StackView.Immediate)
             }
             onBackRequested: {
-                stackView.pop()
+                stackView.pop(StackView.Immediate)
             }
         }
     }
@@ -87,7 +106,7 @@ ApplicationWindow {
         id: playerPageComponent
         PlayerPage {
             onBackRequested: {
-                stackView.pop()
+                stackView.pop(StackView.Immediate)
             }
         }
     }

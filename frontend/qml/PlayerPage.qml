@@ -8,12 +8,48 @@ Item {
 
     property string magnetLink: ""
     property var progress: null
+    property bool controlsVisible: true
 
     signal backRequested()
+
+    // Timer para ocultar controles automáticamente
+    Timer {
+        id: hideControlsTimer
+        interval: 3000  // 3 segundos sin movimiento
+        repeat: false
+        onTriggered: {
+            if (!seekSlider.pressed && !volumeSlider.pressed) {
+                controlsVisible = false
+            }
+        }
+    }
 
     Rectangle {
         anchors.fill: parent
         color: "#000"
+
+        // MouseArea para detectar movimiento del cursor
+        MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            propagateComposedEvents: true
+            acceptedButtons: Qt.NoButton  // No capturar clicks, solo movimiento
+            cursorShape: controlsVisible ? Qt.ArrowCursor : Qt.BlankCursor
+
+            onPositionChanged: {
+                // Mostrar controles al mover el mouse
+                if (!controlsVisible) {
+                    controlsVisible = true
+                }
+                // Resetear timer
+                hideControlsTimer.restart()
+            }
+
+            onEntered: {
+                controlsVisible = true
+                hideControlsTimer.restart()
+            }
+        }
 
         ColumnLayout {
             anchors.fill: parent
@@ -110,9 +146,17 @@ Item {
             // Controls bar
             Rectangle {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 80
+                Layout.preferredHeight: controlsVisible ? 80 : 0
                 color: "#0f1923"
-                visible: backend.isStreamReady
+                visible: backend.isStreamReady && controlsVisible
+                opacity: controlsVisible ? 1.0 : 0.0
+
+                Behavior on Layout.preferredHeight {
+                    NumberAnimation { duration: 200; easing.type: Easing.InOutQuad }
+                }
+                Behavior on opacity {
+                    NumberAnimation { duration: 200 }
+                }
 
                 ColumnLayout {
                     anchors.fill: parent
@@ -361,14 +405,17 @@ Item {
 
                         // Fullscreen button
                         Button {
-                            text: root.Window.window && root.Window.window.visibility === Window.FullScreen ? "⛶" : "⛶"
+                            text: root.Window.window && root.Window.window.visibility === Window.FullScreen ? "🗗" : "🗖"
                             font.pixelSize: 18
                             onClicked: {
                                 if (root.Window.window) {
                                     if (root.Window.window.visibility === Window.FullScreen) {
                                         root.Window.window.showNormal()
+                                        controlsVisible = true
                                     } else {
                                         root.Window.window.showFullScreen()
+                                        // Ocultar controles en fullscreen después de 3 seg
+                                        hideControlsTimer.restart()
                                     }
                                 }
                             }
@@ -443,8 +490,11 @@ Item {
             console.log("Source set, unpausing...")
             mpvPlayer.paused = false
             console.log("Unpause command sent")
+            // Iniciar timer para ocultar controles
+            hideControlsTimer.start()
         } else {
             console.log("Stream not ready yet - ready:", backend.isStreamReady, "path:", backend.streamPath)
         }
     }
+
 }

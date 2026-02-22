@@ -30,7 +30,9 @@ Rectangle {
                 source: movie ? movie.posterUrl : ""
                 fillMode: Image.PreserveAspectCrop
                 asynchronous: true
+                cache: true
                 smooth: true
+                mipmap: true
 
                 // Loading placeholder
                 Rectangle {
@@ -38,6 +40,14 @@ Rectangle {
                     color: "#2a3f54"
                     visible: parent.status !== Image.Ready
                     z: -1
+
+                    // Loading indicator
+                    BusyIndicator {
+                        anchors.centerIn: parent
+                        running: parent.visible && parent.parent.status === Image.Loading
+                        width: 32
+                        height: 32
+                    }
                 }
             }
 

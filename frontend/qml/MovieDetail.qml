@@ -104,12 +104,19 @@ Item {
                             source: movie ? movie.posterUrl : ""
                             fillMode: Image.PreserveAspectFit
                             asynchronous: true
+                            cache: true
+                            smooth: true
 
                             Rectangle {
                                 anchors.fill: parent
                                 color: "#2a3f54"
                                 visible: parent.status !== Image.Ready
                                 z: -1
+
+                                BusyIndicator {
+                                    anchors.centerIn: parent
+                                    running: parent.visible && parent.parent.status === Image.Loading
+                                }
                             }
                         }
 
