@@ -11,107 +11,221 @@ ApplicationWindow {
 
     color: "#0a0908"
 
-    // View states
-    property string currentView: "home"
     property var selectedMovie: null
+    property var selectedSeries: null
 
-    // Stack view for navigation
-    StackView {
-        id: stackView
+    ColumnLayout {
         anchors.fill: parent
-        initialItem: homePageComponent
+        spacing: 0
 
-        // Smooth transitions
-        pushEnter: Transition {
-            PropertyAnimation {
-                property: "opacity"
-                from: 0
-                to: 1
-                duration: 150
+        // Tab bar superior
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 44
+            color: "#0d0c0b"
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 16
+                spacing: 0
+
+                Repeater {
+                    model: ["Películas", "Series"]
+
+                    delegate: Rectangle {
+                        Layout.preferredWidth: 120
+                        Layout.fillHeight: true
+                        color: "transparent"
+
+                        Rectangle {
+                            anchors.bottom: parent.bottom
+                            width: parent.width
+                            height: 2
+                            color: mainContent.currentIndex === index ? "#ff6b35" : "transparent"
+                        }
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: modelData
+                            font.pixelSize: 14
+                            font.weight: mainContent.currentIndex === index ? Font.Bold : Font.Normal
+                            color: mainContent.currentIndex === index ? "#ff6b35" : "#8a837c"
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: mainContent.currentIndex = index
+                        }
+                    }
+                }
+
+                Item { Layout.fillWidth: true }
+            }
+
+            Rectangle {
+                anchors.bottom: parent.bottom
+                width: parent.width
+                height: 1
+                color: "#1a1613"
             }
         }
-        pushExit: Transition {
-            PropertyAnimation {
-                property: "opacity"
-                from: 1
-                to: 0
-                duration: 150
+
+        // Contenido: dos StackViews independientes, uno por tab
+        StackLayout {
+            id: mainContent
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            currentIndex: 0
+
+            // ── Tab 0: Películas ──────────────────────────────────────────
+            StackView {
+                id: moviesStack
+
+                pushEnter: Transition {
+                    PropertyAnimation { property: "opacity"; from: 0; to: 1; duration: 150 }
+                }
+                pushExit: Transition {
+                    PropertyAnimation { property: "opacity"; from: 1; to: 0; duration: 150 }
+                }
+                popEnter: Transition {
+                    PropertyAnimation { property: "opacity"; from: 0; to: 1; duration: 150 }
+                }
+                popExit: Transition {
+                    PropertyAnimation { property: "opacity"; from: 1; to: 0; duration: 150 }
+                }
+
+                Component.onCompleted: {
+                    moviesStack.push(homePageComponent)
+                }
             }
-        }
-        popEnter: Transition {
-            PropertyAnimation {
-                property: "opacity"
-                from: 0
-                to: 1
-                duration: 150
-            }
-        }
-        popExit: Transition {
-            PropertyAnimation {
-                property: "opacity"
-                from: 1
-                to: 0
-                duration: 150
+
+            // ── Tab 1: Series ─────────────────────────────────────────────
+            StackView {
+                id: seriesStack
+
+                pushEnter: Transition {
+                    PropertyAnimation { property: "opacity"; from: 0; to: 1; duration: 150 }
+                }
+                pushExit: Transition {
+                    PropertyAnimation { property: "opacity"; from: 1; to: 0; duration: 150 }
+                }
+                popEnter: Transition {
+                    PropertyAnimation { property: "opacity"; from: 0; to: 1; duration: 150 }
+                }
+                popExit: Transition {
+                    PropertyAnimation { property: "opacity"; from: 1; to: 0; duration: 150 }
+                }
+
+                Component.onCompleted: {
+                    seriesStack.push(seriesPageComponent)
+                }
             }
         }
     }
 
-    // HomePage component
+    // ── Componentes de Películas ──────────────────────────────────────────
+
     Component {
         id: homePageComponent
         HomePage {
-            StackView.onActivated: {
-                // Refresh if needed
-            }
             onMovieSelected: function(movie) {
                 selectedMovie = movie
-                stackView.push(movieDetailComponent, StackView.Immediate)
+                moviesStack.push(movieDetailComponent, StackView.Immediate)
             }
             onSearchRequested: function(query) {
-                stackView.push(searchPageComponent, { "searchQuery": query }, StackView.Immediate)
+                moviesStack.push(moviesSearchPageComponent, { "searchQuery": query }, StackView.Immediate)
             }
         }
     }
 
-    // SearchPage component
     Component {
-        id: searchPageComponent
+        id: moviesSearchPageComponent
         SearchPage {
             onMovieSelected: function(movie) {
                 selectedMovie = movie
-                stackView.push(movieDetailComponent, StackView.Immediate)
+                moviesStack.push(movieDetailComponent, StackView.Immediate)
             }
             onBackRequested: {
-                stackView.pop(StackView.Immediate)
+                moviesStack.pop(StackView.Immediate)
             }
         }
     }
 
-    // MovieDetail component
     Component {
         id: movieDetailComponent
         MovieDetail {
             movie: selectedMovie
             onPlayRequested: function(magnetLink) {
-                stackView.push(playerPageComponent, { "magnetLink": magnetLink }, StackView.Immediate)
+                moviesStack.push(moviesPlayerComponent, { "magnetLink": magnetLink }, StackView.Immediate)
             }
             onBackRequested: {
-                stackView.pop(StackView.Immediate)
+                moviesStack.pop(StackView.Immediate)
             }
         }
     }
 
-    // PlayerPage component
     Component {
-        id: playerPageComponent
+        id: moviesPlayerComponent
         PlayerPage {
             onBackRequested: {
-                stackView.pop(StackView.Immediate)
+                moviesStack.pop(StackView.Immediate)
             }
         }
     }
 
-    // Error dialog
+    // ── Componentes de Series ─────────────────────────────────────────────
+
+    Component {
+        id: seriesPageComponent
+        SeriesPage {
+            onSeriesSelected: function(series) {
+                selectedSeries = series
+                seriesStack.push(seriesDetailComponent, StackView.Immediate)
+            }
+            onSearchRequested: function(query) {
+                seriesStack.push(seriesSearchPageComponent, { "searchQuery": query }, StackView.Immediate)
+            }
+        }
+    }
+
+    Component {
+        id: seriesSearchPageComponent
+        SeriesSearchPage {
+            onSeriesSelected: function(series) {
+                selectedSeries = series
+                seriesStack.push(seriesDetailComponent, StackView.Immediate)
+            }
+            onBackRequested: {
+                seriesStack.pop(StackView.Immediate)
+            }
+        }
+    }
+
+    Component {
+        id: seriesDetailComponent
+        SeriesDetail {
+            series: selectedSeries
+            onPlayRequested: function(magnetLink) {
+                seriesStack.push(seriesPlayerComponent, { "magnetLink": magnetLink }, StackView.Immediate)
+            }
+            onBackRequested: {
+                seriesStack.pop(StackView.Immediate)
+            }
+        }
+    }
+
+    Component {
+        id: seriesPlayerComponent
+        PlayerPage {
+            onBackRequested: {
+                seriesStack.pop(StackView.Immediate)
+            }
+        }
+    }
+
+    // ── Error dialog ──────────────────────────────────────────────────────
+
     Dialog {
         id: errorDialog
         title: "Error"
@@ -136,7 +250,6 @@ ApplicationWindow {
         }
     }
 
-    // Connect to backend error signal
     Connections {
         target: backend
         function onErrorOccurred(error) {

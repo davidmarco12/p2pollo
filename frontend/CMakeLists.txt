@@ -45,6 +45,9 @@ set(QML_FILES
     qml/SearchPage.qml
     qml/MovieDetail.qml
     qml/PlayerPage.qml
+    qml/SeriesPage.qml
+    qml/SeriesDetail.qml
+    qml/SeriesSearchPage.qml
     qml/components/MovieCard.qml
     qml/components/MovieGrid.qml
     qml/components/SearchBar.qml

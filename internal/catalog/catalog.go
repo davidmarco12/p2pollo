@@ -40,6 +40,17 @@ type Torrent struct {
 	Subtitles  []string `json:"subtitles"`  // Idiomas de subtítulos disponibles
 }
 
+// Series representa una serie de TV con su metadata para mostrar en la grilla
+type Series struct {
+	ID        string  `json:"id"`
+	ImdbID    string  `json:"imdbId"`
+	Title     string  `json:"title"`
+	Year      int     `json:"year"`
+	Rating    float64 `json:"rating"`
+	PosterURL string  `json:"posterUrl"`
+	Genres    string  `json:"genres"`
+}
+
 // CatalogProvider es la interfaz para proveedores de catalogo de peliculas
 type CatalogProvider interface {
 	// Popular retorna peliculas populares/recientes para la pagina de inicio

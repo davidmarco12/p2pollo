@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"p2pollo/internal/catalog"
+	"p2pollo/internal/catalog/eztv"
+	"p2pollo/internal/catalog/tvmaze"
 	"p2pollo/internal/catalog/yts"
 	"p2pollo/internal/config"
 	"p2pollo/internal/scraper"
@@ -27,6 +29,8 @@ type Server struct {
 	streamer *streaming.Service
 	scraper  *scraper.Scraper
 	catalog  catalog.CatalogProvider
+	tvmaze   *tvmaze.Client
+	eztv     *eztv.Client
 	log      *logrus.Logger
 }
 
@@ -62,6 +66,10 @@ func NewServer() (*Server, error) {
 	// Inicializar catálogo YTS
 	catalogProvider := yts.New(cfg.Trackers)
 
+	// Inicializar cliente TVmaze y EZTV
+	tvmazeClient := tvmaze.New()
+	eztvClient := eztv.New()
+
 	// Crear router Gin
 	router := gin.Default()
 
@@ -81,6 +89,8 @@ func NewServer() (*Server, error) {
 		streamer: streamer,
 		scraper:  s,
 		catalog:  catalogProvider,
+		tvmaze:   tvmazeClient,
+		eztv:     eztvClient,
 		log:      log,
 	}
 
@@ -97,6 +107,12 @@ func (s *Server) setupRoutes() {
 	api.GET("/popular", s.handleGetPopular)
 	api.GET("/search", s.handleSearchMovies)
 	api.POST("/movie/details", s.handleGetMovieDetails)
+
+	// Catálogo de series
+	api.GET("/series/popular", s.handleGetPopularSeries)
+	api.GET("/series/search", s.handleSearchSeries)
+	api.POST("/series/details", s.handleGetSeriesDetails)
+	api.GET("/series/episode/torrents", s.handleGetEpisodeTorrents)
 
 	// Streaming
 	api.POST("/play", s.handlePlayMagnet)

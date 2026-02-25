@@ -6,6 +6,7 @@ ScrollView {
 
     property var movies: []
     readonly property int count: moviesModel.count
+    property bool isSeries: false
 
     signal movieClicked(var movie)
 
@@ -36,6 +37,7 @@ ScrollView {
             width: gridView.cellWidth - 20
             height: gridView.cellHeight - 20
             movie: model
+            isSeries: root.isSeries
             onClicked: {
                 root.movieClicked(model)
             }

@@ -42,6 +42,12 @@ public:
     Q_INVOKABLE void stopStream();
     Q_INVOKABLE void getProgress();
 
+    // Series
+    Q_INVOKABLE void getPopularSeries();
+    Q_INVOKABLE void searchSeries(const QString &query);
+    Q_INVOKABLE void getSeriesDetails(const QJsonObject &series);
+    Q_INVOKABLE void getEpisodeTorrents(const QString &title, const QString &imdbId, int season, int episode);
+
     // Helpers
     Q_INVOKABLE void startStreamPathPolling();
     Q_INVOKABLE void stopStreamPathPolling();
@@ -62,6 +68,12 @@ signals:
     void streamStarted();
     void streamStopped();
     void progressReceived(const QJsonObject &progress);
+
+    // Series signals
+    void popularSeriesReceived(const QJsonArray &series);
+    void seriesSearchResultsReceived(const QJsonArray &series);
+    void seriesDetailsReceived(const QJsonObject &details);
+    void episodeTorrentsReceived(const QJsonArray &torrents);
 
     // Error signals
     void errorOccurred(const QString &error);

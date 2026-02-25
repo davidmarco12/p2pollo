@@ -7,6 +7,9 @@
         <file>qml/SearchPage.qml</file>
         <file>qml/MovieDetail.qml</file>
         <file>qml/PlayerPage.qml</file>
+        <file>qml/SeriesPage.qml</file>
+        <file>qml/SeriesDetail.qml</file>
+        <file>qml/SeriesSearchPage.qml</file>
 
         <!-- Components -->
         <file>qml/components/MovieCard.qml</file>

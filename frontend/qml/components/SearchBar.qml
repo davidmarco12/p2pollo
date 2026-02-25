@@ -7,6 +7,7 @@ Rectangle {
 
     property bool showBackButton: false
     property string initialQuery: ""
+    property string placeholderText: "Buscar películas..."
 
     signal searchRequested(string query)
     signal backClicked()
@@ -91,7 +92,7 @@ Rectangle {
                 TextField {
                     id: searchInput
                     Layout.fillWidth: true
-                    placeholderText: "Buscar películas..."
+                    placeholderText: root.placeholderText
                     text: root.initialQuery
                     font.pixelSize: 14
                     color: "#f5f3f0"

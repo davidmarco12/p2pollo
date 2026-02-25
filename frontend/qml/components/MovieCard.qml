@@ -6,6 +6,7 @@ Rectangle {
     id: root
 
     property var movie: null
+    property bool isSeries: false
 
     signal clicked()
 
@@ -51,6 +52,26 @@ Rectangle {
                 }
             }
 
+            // Series badge (top-left)
+            Rectangle {
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.margins: 8
+                width: 32
+                height: 20
+                color: "#00a8e1"
+                radius: 4
+                visible: root.isSeries
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "TV"
+                    font.pixelSize: 10
+                    font.weight: Font.Bold
+                    color: "#fff"
+                }
+            }
+
             // Rating badge
             Rectangle {
                 anchors.top: parent.top
@@ -58,9 +79,9 @@ Rectangle {
                 anchors.margins: 8
                 width: 50
                 height: 24
-                color: "#ff6b3533"
+                color: root.isSeries ? "#00a8e133" : "#ff6b3533"
                 radius: 6
-                border.color: "#ff6b35"
+                border.color: root.isSeries ? "#00a8e1" : "#ff6b35"
                 border.width: 1
                 visible: movie && movie.rating > 0
 
@@ -71,14 +92,14 @@ Rectangle {
                     Text {
                         text: "★"
                         font.pixelSize: 12
-                        color: "#ff6b35"
+                        color: root.isSeries ? "#00a8e1" : "#ff6b35"
                     }
 
                     Text {
                         text: movie ? movie.rating.toFixed(1) : ""
                         font.pixelSize: 11
                         font.weight: Font.Medium
-                        color: "#ff6b35"
+                        color: root.isSeries ? "#00a8e1" : "#ff6b35"
                     }
                 }
             }
@@ -99,7 +120,7 @@ Rectangle {
                     anchors.centerIn: parent
                     text: "▶"
                     font.pixelSize: 48
-                    color: "#ff6b35"
+                    color: root.isSeries ? "#00a8e1" : "#ff6b35"
                     opacity: mouseArea.containsMouse ? 1.0 : 0
                     Behavior on opacity { NumberAnimation { duration: 300 } }
                 }

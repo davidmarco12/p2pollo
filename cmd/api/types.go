@@ -42,6 +42,36 @@ type MovieDetailResponse struct {
 	Torrents    []TorrentOption `json:"torrents"`
 }
 
+// --- Tipos de series ---
+
+type SeriesCard struct {
+	ID        string  `json:"id"`
+	ImdbID    string  `json:"imdbId"`
+	Title     string  `json:"title"`
+	Year      int     `json:"year"`
+	Rating    float64 `json:"rating"`
+	PosterURL string  `json:"posterUrl"`
+	Genres    string  `json:"genres"`
+}
+
+type EpisodeItem struct {
+	Season  int    `json:"season"`
+	Episode int    `json:"episode"`
+	Title   string `json:"title"`
+	AirDate string `json:"airDate"`
+}
+
+type SeasonGroup struct {
+	Number   int           `json:"number"`
+	Episodes []EpisodeItem `json:"episodes"`
+}
+
+type SeriesDetailResponse struct {
+	SeriesCard
+	Description string        `json:"description"`
+	Seasons     []SeasonGroup `json:"seasons"`
+}
+
 // --- Tipos de streaming ---
 
 type PlayRequest struct {

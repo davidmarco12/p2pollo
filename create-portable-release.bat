@@ -14,10 +14,17 @@ if not exist "dist\p2pollo-portable" (
     exit /b 1
 )
 
+REM Asegurar que libmpv.dll existe (copia de libmpv-2.dll)
+if exist "dist\p2pollo-portable\libmpv-2.dll" (
+    copy /Y "dist\p2pollo-portable\libmpv-2.dll" "dist\p2pollo-portable\libmpv.dll" >nul
+    echo Copiado libmpv-2.dll como libmpv.dll
+    echo.
+)
+
 REM Obtener version o usar fecha
 for /f "tokens=2 delims==" %%a in ('wmic OS Get localdatetime /value') do set "dt=%%a"
 set "YY=%dt:~2,2%" & set "MM=%dt:~4,2%" & set "DD=%dt:~6,2%"
-set "version=v1.0.0-%YY%%MM%%DD%"
+set "version=v0.0.2-%YY%%MM%%DD%"
 
 echo Version: %version%
 echo.

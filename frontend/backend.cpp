@@ -74,6 +74,33 @@ void Backend::getProgress()
     sendGetRequest("/api/progress", "progress");
 }
 
+// --- Series API Methods ---
+
+void Backend::getPopularSeries()
+{
+    sendGetRequest("/api/series/popular", "popularSeries");
+}
+
+void Backend::searchSeries(const QString &query)
+{
+    sendGetRequest("/api/series/search?q=" + QUrl::toPercentEncoding(query), "searchSeries");
+}
+
+void Backend::getSeriesDetails(const QJsonObject &series)
+{
+    sendPostRequest("/api/series/details", series, "seriesDetails");
+}
+
+void Backend::getEpisodeTorrents(const QString &title, const QString &imdbId, int season, int episode)
+{
+    QString endpoint = QString("/api/series/episode/torrents?title=%1&imdb=%2&season=%3&episode=%4")
+        .arg(QUrl::toPercentEncoding(title))
+        .arg(QUrl::toPercentEncoding(imdbId))
+        .arg(season)
+        .arg(episode);
+    sendGetRequest(endpoint, "episodeTorrents");
+}
+
 // --- Polling ---
 
 void Backend::startStreamPathPolling()
@@ -226,6 +253,25 @@ void Backend::handleNetworkReply(QNetworkReply *reply)
     else if (context == "progress") {
         if (doc.isObject()) {
             emit progressReceived(doc.object());
+        }
+    }
+    else if (context == "popularSeries" || context == "searchSeries") {
+        if (doc.isArray()) {
+            if (context == "popularSeries") {
+                emit popularSeriesReceived(doc.array());
+            } else {
+                emit seriesSearchResultsReceived(doc.array());
+            }
+        }
+    }
+    else if (context == "seriesDetails") {
+        if (doc.isObject()) {
+            emit seriesDetailsReceived(doc.object());
+        }
+    }
+    else if (context == "episodeTorrents") {
+        if (doc.isArray()) {
+            emit episodeTorrentsReceived(doc.array());
         }
     }
 }

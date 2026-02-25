@@ -12,18 +12,28 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PuerkitoBio/goquery"
 	"p2pollo/internal/catalog"
+	"github.com/PuerkitoBio/goquery"
 	"github.com/sirupsen/logrus"
 )
 
-// YTS implementa catalog.CatalogProvider scrapeando en.yts-official.org
+// YTS implementa catalog.CatalogProvider
+// Popular: scraping de en.yts-official.org
+// Search: OMDB API (omdbapi.com)
+// Details: OMDB API para descripcion + scraper para torrents
 type YTS struct {
 	baseURL  string
+	omdbKey  string
 	client   *http.Client
 	trackers []string
 	log      *logrus.Logger
 }
+
+// onclickRegex parsea el atributo onclick="openModal(id, "imdbId", "title", "year")"
+var onclickRegex = regexp.MustCompile(`openModal\((\d+),\s*"([^"]*)",\s*"([^"]*)",\s*"(\d+)"\)`)
+
+// ratingRegex extrae el numero de rating del texto
+var ratingRegex = regexp.MustCompile(`([\d.]+)`)
 
 // New crea una nueva instancia del proveedor YTS
 func New(extraTrackers []string) *YTS {
@@ -35,39 +45,22 @@ func New(extraTrackers []string) *YTS {
 
 	return &YTS{
 		baseURL: "https://en.yts-official.org",
+		omdbKey: "trilogy",
 		client: &http.Client{
-			Timeout: 20 * time.Second,
+			Timeout: 15 * time.Second,
 		},
 		trackers: trackers,
 		log:      log,
 	}
 }
 
-// onclickRegex parsea el atributo onclick="openModal(id, "imdbId", "title", "year")"
-var onclickRegex = regexp.MustCompile(`openModal\((\d+),\s*"([^"]*)",\s*"([^"]*)",\s*"(\d+)"\)`)
+// --- Popular: scraping HTML de YTS ---
 
-// ratingRegex extrae el numero de rating del texto (ej: "8.4" de " 8.4")
-var ratingRegex = regexp.MustCompile(`([\d.]+)`)
-
-// Popular retorna las peliculas mas recientes de la pagina principal
+// Popular retorna las peliculas mas populares scrapeando la pagina principal
 func (y *YTS) Popular(page int) ([]catalog.Movie, error) {
 	u := y.baseURL + "/"
 	if page > 1 {
 		u = fmt.Sprintf("%s/?page=%d", y.baseURL, page)
-	}
-	return y.fetchMovies(u)
-}
-
-// Search busca peliculas por titulo
-func (y *YTS) Search(query string, page int) ([]catalog.Movie, error) {
-	query = strings.TrimSpace(query)
-	if query == "" {
-		return nil, fmt.Errorf("consulta vacia")
-	}
-
-	u := fmt.Sprintf("%s/?search=%s", y.baseURL, url.QueryEscape(query))
-	if page > 1 {
-		u = fmt.Sprintf("%s&page=%d", u, page)
 	}
 	return y.fetchMovies(u)
 }
@@ -97,17 +90,14 @@ func (y *YTS) fetchMovies(pageURL string) ([]catalog.Movie, error) {
 		title := matches[3]
 		year, _ := strconv.Atoi(matches[4])
 
-		// Poster URL
 		posterURL, _ := card.Find("img.movie-poster").Attr("src")
 
-		// Rating
 		ratingText := card.Find("span.movie-rating").Text()
 		var rating float64
 		if rm := ratingRegex.FindStringSubmatch(ratingText); len(rm) > 1 {
 			rating, _ = strconv.ParseFloat(rm[1], 64)
 		}
 
-		// Generos
 		genres := strings.TrimSpace(card.Find("span.movie-genres").Text())
 
 		movies = append(movies, catalog.Movie{
@@ -122,160 +112,6 @@ func (y *YTS) fetchMovies(pageURL string) ([]catalog.Movie, error) {
 	})
 
 	return movies, nil
-}
-
-// --- AJAX para detalle de pelicula ---
-
-// ajaxResponse es la respuesta del endpoint AJAX de YTS
-type ajaxResponse struct {
-	Success bool `json:"success"`
-	YTS     struct {
-		Data struct {
-			Movie ajaxMovie `json:"movie"`
-		} `json:"data"`
-	} `json:"yts"`
-	TMDB *tmdbData `json:"tmdb"`
-}
-
-type ajaxMovie struct {
-	ID              int           `json:"id"`
-	Title           string        `json:"title"`
-	Year            int           `json:"year"`
-	Rating          float64       `json:"rating"`
-	Runtime         int           `json:"runtime"`
-	Genres          []string      `json:"genres"`
-	DescriptionFull string        `json:"description_full"`
-	Torrents        []ajaxTorrent `json:"torrents"`
-}
-
-type ajaxTorrent struct {
-	Hash    string `json:"hash"`
-	Quality string `json:"quality"`
-	Type    string `json:"type"`
-	Size    string `json:"size"`
-	Seeds   int    `json:"seeds"`
-	Peers   int    `json:"peers"`
-}
-
-type tmdbData struct {
-	Title        string  `json:"title"`
-	Overview     string  `json:"overview"`
-	Runtime      int     `json:"runtime"`
-	VoteAverage  float64 `json:"vote_average"`
-	PosterPath   string  `json:"poster_path"`
-	BackdropPath string  `json:"backdrop_path"`
-}
-
-// Details obtiene el detalle completo de una pelicula incluyendo torrents
-func (y *YTS) Details(movie catalog.Movie) (*catalog.MovieDetail, error) {
-	u := fmt.Sprintf("%s/?ajax=movie_details&movie_id=%s&imdb_id=%s&title=%s&year=%d",
-		y.baseURL,
-		movie.ID,
-		url.QueryEscape(movie.ImdbID),
-		url.QueryEscape(movie.Title),
-		movie.Year,
-	)
-
-	req, err := http.NewRequest(http.MethodGet, u, nil)
-	if err != nil {
-		return nil, fmt.Errorf("error creando request: %w", err)
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := y.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("error en request HTTP: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("status HTTP %d para detalle de %s", resp.StatusCode, movie.Title)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("error leyendo respuesta: %w", err)
-	}
-
-	y.log.Debugf("YTS AJAX response for %s: %s", movie.Title, string(body))
-
-	var data ajaxResponse
-	if err := json.Unmarshal(body, &data); err != nil {
-		return nil, fmt.Errorf("error parseando JSON: %w", err)
-	}
-
-	m := data.YTS.Data.Movie
-
-	y.log.Debugf("Parsed description_full: %q", m.DescriptionFull)
-	if data.TMDB != nil {
-		y.log.Debugf("TMDB overview: %q", data.TMDB.Overview)
-	}
-
-	// Usar TMDB para mejor metadata cuando este disponible
-	description := m.DescriptionFull
-	runtime := m.Runtime
-	if data.TMDB != nil {
-		if data.TMDB.Overview != "" {
-			description = data.TMDB.Overview
-		}
-		if data.TMDB.Runtime > 0 {
-			runtime = data.TMDB.Runtime
-		}
-	}
-
-	y.log.Infof("Final description for %s: %q (length: %d)", movie.Title, description, len(description))
-
-	// Construir torrents con magnet links
-	torrents := make([]catalog.Torrent, 0, len(m.Torrents))
-	// Filtrar torrents duplicados (mismo hash + quality)
-	seen := make(map[string]bool)
-	for _, t := range m.Torrents {
-		key := t.Hash + "_" + t.Quality + "_" + t.Type
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-
-		magnetLink := catalog.BuildMagnetLink(t.Hash, movie.Title, y.trackers)
-
-		// Construir nombre del archivo a partir de metadata
-		fileName := fmt.Sprintf("%s.%d.%s.%s",
-			strings.ReplaceAll(movie.Title, " ", "."),
-			movie.Year,
-			t.Quality,
-			t.Type,
-		)
-
-		// TODO: Scrapear subtítulos disponibles del sitio YTS
-		subtitles := []string{}
-
-		torrents = append(torrents, catalog.Torrent{
-			Hash:       t.Hash,
-			Quality:    t.Quality,
-			Type:       t.Type,
-			Size:       t.Size,
-			Seeds:      t.Seeds,
-			Peers:      t.Peers,
-			MagnetLink: magnetLink,
-			FileName:   fileName,
-			Subtitles:  subtitles,
-		})
-	}
-
-	// Ordenar torrents por seeds (descendente) - mejor ratio primero
-	sort.Slice(torrents, func(i, j int) bool {
-		return torrents[i].Seeds > torrents[j].Seeds
-	})
-
-	detail := &catalog.MovieDetail{
-		Movie:       movie,
-		Description: description,
-		Runtime:     runtime,
-		Torrents:    torrents,
-	}
-
-	return detail, nil
 }
 
 // fetchDocument hace un GET y retorna el documento HTML parseado
@@ -305,4 +141,175 @@ func (y *YTS) fetchDocument(u string) (*goquery.Document, error) {
 	}
 
 	return doc, nil
+}
+
+// --- Search: OMDB API ---
+
+type omdbSearchResponse struct {
+	Response string       `json:"Response"`
+	Search   []omdbResult `json:"Search"`
+	Error    string       `json:"Error"`
+}
+
+type omdbResult struct {
+	Title  string `json:"Title"`
+	Year   string `json:"Year"`
+	ImdbID string `json:"imdbID"`
+	Type   string `json:"Type"`
+	Poster string `json:"Poster"`
+}
+
+// Search busca peliculas por titulo usando OMDB API
+func (y *YTS) Search(query string, page int) ([]catalog.Movie, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, fmt.Errorf("consulta vacia")
+	}
+
+	u := fmt.Sprintf("https://www.omdbapi.com/?s=%s&type=movie&page=%d&apikey=%s",
+		url.QueryEscape(query), page, y.omdbKey)
+
+	body, err := y.doGet(u)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp omdbSearchResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("error parseando respuesta OMDB: %w", err)
+	}
+
+	if resp.Response != "True" {
+		if resp.Error != "" {
+			return nil, fmt.Errorf("OMDB: %s", resp.Error)
+		}
+		return []catalog.Movie{}, nil
+	}
+
+	movies := make([]catalog.Movie, 0, len(resp.Search))
+	for _, r := range resp.Search {
+		if r.Type != "movie" {
+			continue
+		}
+		year := 0
+		fmt.Sscanf(r.Year, "%d", &year)
+
+		poster := r.Poster
+		if poster == "N/A" {
+			poster = ""
+		}
+
+		movies = append(movies, catalog.Movie{
+			ID:        r.ImdbID,
+			ImdbID:    r.ImdbID,
+			Title:     r.Title,
+			Year:      year,
+			Rating:    0,
+			PosterURL: poster,
+			Genres:    "",
+		})
+	}
+
+	return movies, nil
+}
+
+// --- Details: OMDB API para descripcion ---
+
+type omdbDetailResponse struct {
+	Title    string `json:"Title"`
+	Year     string `json:"Year"`
+	Genre    string `json:"Genre"`
+	Plot     string `json:"Plot"`
+	Runtime  string `json:"Runtime"`
+	ImdbID   string `json:"imdbID"`
+	ImdbRating string `json:"imdbRating"`
+	Response string `json:"Response"`
+}
+
+// Details obtiene la descripcion de una pelicula via OMDB y su runtime
+func (y *YTS) Details(movie catalog.Movie) (*catalog.MovieDetail, error) {
+	imdbID := movie.ImdbID
+	if imdbID == "" {
+		imdbID = movie.ID
+	}
+	if imdbID == "" {
+		return nil, fmt.Errorf("no imdbID disponible")
+	}
+
+	u := fmt.Sprintf("https://www.omdbapi.com/?i=%s&plot=full&apikey=%s",
+		url.QueryEscape(imdbID), y.omdbKey)
+
+	body, err := y.doGet(u)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp omdbDetailResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("error parseando respuesta OMDB: %w", err)
+	}
+
+	if resp.Response != "True" {
+		return nil, fmt.Errorf("OMDB: pelicula no encontrada")
+	}
+
+	// Parsear runtime (ej: "127 min" → 127)
+	runtime := 0
+	fmt.Sscanf(resp.Runtime, "%d min", &runtime)
+
+	// Actualizar rating si esta disponible
+	if resp.ImdbRating != "" && resp.ImdbRating != "N/A" {
+		rating, _ := strconv.ParseFloat(resp.ImdbRating, 64)
+		movie.Rating = rating
+	}
+
+	// Actualizar generos si estan disponibles
+	if resp.Genre != "" && resp.Genre != "N/A" && movie.Genres == "" {
+		movie.Genres = resp.Genre
+	}
+
+	plot := resp.Plot
+	if plot == "N/A" {
+		plot = ""
+	}
+
+	// Construir torrents YTS via magnet hash si tenemos los datos
+	torrents := make([]catalog.Torrent, 0)
+	sort.Slice(torrents, func(i, j int) bool {
+		return torrents[i].Seeds > torrents[j].Seeds
+	})
+
+	return &catalog.MovieDetail{
+		Movie:       movie,
+		Description: plot,
+		Runtime:     runtime,
+		Torrents:    torrents,
+	}, nil
+}
+
+// doGet hace un GET y retorna el body
+func (y *YTS) doGet(u string) ([]byte, error) {
+	req, err := http.NewRequest(http.MethodGet, u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creando request: %w", err)
+	}
+
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := y.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error en request HTTP: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("status HTTP %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error leyendo respuesta: %w", err)
+	}
+	return body, nil
 }
