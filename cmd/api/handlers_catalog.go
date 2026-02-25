@@ -3,16 +3,24 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"p2pollo/internal/catalog"
 	"github.com/gin-gonic/gin"
 )
 
-// handleGetPopular retorna películas populares
+// handleGetPopular retorna películas populares desde JustWatch
 func (s *Server) handleGetPopular(c *gin.Context) {
-	movies, err := s.catalog.Popular(1)
+	page := 1
+	if p := c.Query("page"); p != "" {
+		if n, err := strconv.Atoi(p); err == nil && n > 0 {
+			page = n
+		}
+	}
+
+	movies, err := s.justwatch.PopularMovies(page)
 	if err != nil {
-		s.log.Errorf("Error obteniendo películas populares: %v", err)
+		s.log.Errorf("Error obteniendo películas populares de JustWatch: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

@@ -12,23 +12,34 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// handleGetPopularSeries retorna series populares de TVmaze
+// handleGetPopularSeries retorna series populares desde JustWatch
 func (s *Server) handleGetPopularSeries(c *gin.Context) {
-	page := 0
+	page := 1
 	if p := c.Query("page"); p != "" {
 		if n, err := strconv.Atoi(p); err == nil && n > 0 {
-			page = n - 1 // TVmaze es 0-indexed
+			page = n
 		}
 	}
 
-	shows, err := s.tvmaze.PopularShows(page)
+	series, err := s.justwatch.PopularSeries(page)
 	if err != nil {
-		s.log.Errorf("Error obteniendo series populares de TVmaze: %v", err)
+		s.log.Errorf("Error obteniendo series populares de JustWatch: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	result := showsToSeriesCards(shows)
+	result := make([]SeriesCard, 0, len(series))
+	for _, s := range series {
+		result = append(result, SeriesCard{
+			ID:        s.ID,
+			ImdbID:    s.ImdbID,
+			Title:     s.Title,
+			Year:      s.Year,
+			Rating:    s.Rating,
+			PosterURL: s.PosterURL,
+			Genres:    s.Genres,
+		})
+	}
 	c.JSON(http.StatusOK, result)
 }
 

@@ -160,7 +160,10 @@ void MpvObject::setPaused(bool paused)
 
 void MpvObject::setPosition(double position)
 {
-    setProperty("time-pos", position);
+    // Usar el comando seek en modo absoluto (más confiable que set time-pos)
+    QByteArray posStr = QString::number(position, 'f', 3).toUtf8();
+    const char *cmd[] = {"seek", posStr.data(), "absolute", nullptr};
+    mpv_command_async(m_mpv, 0, cmd);
 }
 
 void MpvObject::setVolume(int volume)

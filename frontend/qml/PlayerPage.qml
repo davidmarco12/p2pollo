@@ -168,8 +168,8 @@ Item {
                         id: seekSlider
                         Layout.fillWidth: true
                         from: 0
-                        to: mpvPlayer.duration
-                        value: mpvPlayer.position
+                        to: mpvPlayer.duration > 0 ? mpvPlayer.duration : 1
+                        value: 0
                         enabled: mpvPlayer.duration > 0
 
                         onMoved: {
@@ -339,6 +339,7 @@ Item {
                             text: "CC"
                             font.pixelSize: 14
                             font.bold: true
+                            property int currentSubTrack: -1  // -1 = no seleccionado aun, 0 = desactivado
                             onClicked: {
                                 subtitlesMenu.popup()
                             }
@@ -389,7 +390,17 @@ Item {
 
                                 MenuItem {
                                     text: "Desactivar"
-                                    onTriggered: mpvPlayer.setSubtitleTrack(0)
+                                    indicator: Rectangle {
+                                        width: 8; height: 8; radius: 4
+                                        anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+                                        color: subtitlesButton.currentSubTrack === 0 ? "#ff6b35" : "transparent"
+                                        border.color: subtitlesButton.currentSubTrack === 0 ? "#ff6b35" : "#555"
+                                        border.width: 1
+                                    }
+                                    onTriggered: {
+                                        mpvPlayer.setSubtitleTrack(0)
+                                        subtitlesButton.currentSubTrack = 0
+                                    }
                                 }
 
                                 MenuSeparator {}
@@ -399,7 +410,17 @@ Item {
                                 id: menuItemComponent
                                 MenuItem {
                                     property int trackId: 0
-                                    onTriggered: mpvPlayer.setSubtitleTrack(trackId)
+                                    indicator: Rectangle {
+                                        width: 8; height: 8; radius: 4
+                                        anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+                                        color: trackId === subtitlesButton.currentSubTrack ? "#ff6b35" : "transparent"
+                                        border.color: trackId === subtitlesButton.currentSubTrack ? "#ff6b35" : "#555"
+                                        border.width: 1
+                                    }
+                                    onTriggered: {
+                                        mpvPlayer.setSubtitleTrack(trackId)
+                                        subtitlesButton.currentSubTrack = trackId
+                                    }
                                 }
                             }
                         }

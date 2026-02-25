@@ -11,6 +11,7 @@ import (
 
 	"p2pollo/internal/catalog"
 	"p2pollo/internal/catalog/eztv"
+	"p2pollo/internal/catalog/justwatch"
 	"p2pollo/internal/catalog/tvmaze"
 	"p2pollo/internal/catalog/yts"
 	"p2pollo/internal/config"
@@ -24,14 +25,15 @@ import (
 
 // Server es el servidor HTTP API
 type Server struct {
-	router   *gin.Engine
-	cfg      *config.Config
-	streamer *streaming.Service
-	scraper  *scraper.Scraper
-	catalog  catalog.CatalogProvider
-	tvmaze   *tvmaze.Client
-	eztv     *eztv.Client
-	log      *logrus.Logger
+	router    *gin.Engine
+	cfg       *config.Config
+	streamer  *streaming.Service
+	scraper   *scraper.Scraper
+	catalog   catalog.CatalogProvider
+	justwatch *justwatch.Client
+	tvmaze    *tvmaze.Client
+	eztv      *eztv.Client
+	log       *logrus.Logger
 }
 
 // NewServer crea un nuevo servidor HTTP API
@@ -66,7 +68,8 @@ func NewServer() (*Server, error) {
 	// Inicializar catálogo YTS
 	catalogProvider := yts.New(cfg.Trackers)
 
-	// Inicializar cliente TVmaze y EZTV
+	// Inicializar cliente JustWatch, TVmaze y EZTV
+	justwatchClient := justwatch.New()
 	tvmazeClient := tvmaze.New()
 	eztvClient := eztv.New()
 
@@ -84,14 +87,15 @@ func NewServer() (*Server, error) {
 	}))
 
 	srv := &Server{
-		router:   router,
-		cfg:      cfg,
-		streamer: streamer,
-		scraper:  s,
-		catalog:  catalogProvider,
-		tvmaze:   tvmazeClient,
-		eztv:     eztvClient,
-		log:      log,
+		router:    router,
+		cfg:       cfg,
+		streamer:  streamer,
+		scraper:   s,
+		catalog:   catalogProvider,
+		justwatch: justwatchClient,
+		tvmaze:    tvmazeClient,
+		eztv:      eztvClient,
+		log:       log,
 	}
 
 	srv.setupRoutes()

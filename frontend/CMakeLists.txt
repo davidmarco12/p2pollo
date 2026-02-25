@@ -57,6 +57,11 @@ set(QML_FILES
 # Qt resources
 qt_add_resources(RESOURCES resources.qrc)
 
+# Windows: recurso de icono para el exe
+if(WIN32)
+    list(APPEND SOURCES app.rc)
+endif()
+
 # Create executable
 qt_add_executable(${PROJECT_NAME}
     ${SOURCES}

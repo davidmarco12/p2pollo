@@ -13,15 +13,17 @@ ApplicationWindow {
 
     property var selectedMovie: null
     property var selectedSeries: null
+    property bool playerActive: false
 
     ColumnLayout {
         anchors.fill: parent
         spacing: 0
 
-        // Tab bar superior
+        // Tab bar superior — oculta cuando el player está activo
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 44
+            visible: !root.playerActive
             color: "#0d0c0b"
 
             RowLayout {
@@ -168,6 +170,8 @@ ApplicationWindow {
     Component {
         id: moviesPlayerComponent
         PlayerPage {
+            Component.onCompleted: root.playerActive = true
+            Component.onDestruction: root.playerActive = false
             onBackRequested: {
                 moviesStack.pop(StackView.Immediate)
             }
@@ -218,6 +222,8 @@ ApplicationWindow {
     Component {
         id: seriesPlayerComponent
         PlayerPage {
+            Component.onCompleted: root.playerActive = true
+            Component.onDestruction: root.playerActive = false
             onBackRequested: {
                 seriesStack.pop(StackView.Immediate)
             }

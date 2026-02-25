@@ -25,6 +25,9 @@ int main(int argc, char *argv[])
     app.setApplicationName("p2pollo");
     app.setApplicationVersion("1.0.0");
 
+    // Icono de la aplicación (barra de título y taskbar)
+    app.setWindowIcon(QIcon(":/assets/images/output-estesi.png"));
+
     // Create backend instance
     Backend backend;
 
