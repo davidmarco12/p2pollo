@@ -108,6 +108,40 @@ Item {
                     }
                 }
 
+                // Overlay de buffering mid-playback: aparece cuando mpv se tilda esperando datos
+                // (el usuario adelantó más allá del buffer descargado)
+                Rectangle {
+                    anchors.fill: parent
+                    color: "#99000000"
+                    visible: backend.isStreamReady && mpvPlayer.bufferingForCache
+                    z: 9
+
+                    ColumnLayout {
+                        anchors.centerIn: parent
+                        spacing: 12
+
+                        BusyIndicator {
+                            Layout.alignment: Qt.AlignHCenter
+                            running: parent.parent.visible
+                        }
+
+                        Text {
+                            Layout.alignment: Qt.AlignHCenter
+                            text: "Descargando..."
+                            font.pixelSize: 15
+                            color: "#f5f3f0"
+                        }
+
+                        Text {
+                            Layout.alignment: Qt.AlignHCenter
+                            text: progress && progress.speedMBps > 0 ? progress.speedMBps.toFixed(2) + " MB/s" : ""
+                            font.pixelSize: 13
+                            color: "#8a837c"
+                            visible: text !== ""
+                        }
+                    }
+                }
+
                 // MPV Player (embedded)
                 // Note: Always visible so Qt creates the OpenGL renderer immediately
                 // The loading overlay (z: 10) covers this when not ready
@@ -184,6 +218,19 @@ Item {
                             radius: 2
                             color: "#2a2521"
 
+                            // Barra gris: porción del video descargada (buffer disponible)
+                            Rectangle {
+                                width: {
+                                    if (!progress || progress.totalSize <= 0) return 0
+                                    var frac = Math.min(progress.headWritten / progress.totalSize, 1.0)
+                                    return frac * parent.width
+                                }
+                                height: parent.height
+                                color: "#5a5551"
+                                radius: 2
+                            }
+
+                            // Barra naranja: posición actual de reproducción
                             Rectangle {
                                 width: seekSlider.visualPosition * parent.width
                                 height: parent.height
@@ -482,6 +529,9 @@ Item {
 
     // Cleanup when component is destroyed
     Component.onDestruction: {
+        // Pausar mpv primero para que libmpv deje de decodificar antes de destruirse.
+        // Evita crashes cuando el renderer OpenGL se libera con frames en vuelo.
+        mpvPlayer.paused = true
         backend.stopStream()
     }
 

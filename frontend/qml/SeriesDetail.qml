@@ -261,6 +261,9 @@ Item {
                                             hoverEnabled: true
                                             cursorShape: Qt.PointingHandCursor
                                             onClicked: {
+                                                // Limpiar antes de abrir para que una respuesta stale
+                                                // de un click anterior no pise los datos del episodio nuevo.
+                                                torrentDialog.torrents = []
                                                 torrentDialog.episodeTitle = modelData.title || ""
                                                 torrentDialog.season = modelData.season
                                                 torrentDialog.episode = modelData.episode
@@ -429,13 +432,14 @@ Item {
 
                     ColumnLayout {
                         width: parent.width
+                        height: implicitHeight
                         spacing: 8
 
                         Repeater {
                             model: torrentDialog.torrents
 
                             delegate: Rectangle {
-                                width: parent ? parent.width : 0
+                                Layout.fillWidth: true
                                 height: 90
                                 color: tMouseArea.containsMouse ? "#1a2030" : "#0a0f1a"
                                 radius: 6
@@ -547,6 +551,10 @@ Item {
         }
 
         onOpened: {
+            torrentDialog.torrents = []
+        }
+
+        onClosed: {
             torrentDialog.torrents = []
         }
     }

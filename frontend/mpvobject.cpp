@@ -34,6 +34,7 @@ MpvObject::MpvObject(QQuickItem *parent)
     , m_duration(0.0)
     , m_volume(100)
     , m_subtitlesEnabled(true)
+    , m_bufferingForCache(false)
 {
     qDebug() << "[MpvObject] Constructor - setting up FBO";
 
@@ -69,6 +70,9 @@ MpvObject::MpvObject(QQuickItem *parent)
     observeProperty("duration");
     observeProperty("pause");
     observeProperty("volume");
+    // pausing-for-cache: true cuando mpv está esperando más datos del buffer
+    // Se observa con MPV_FORMAT_FLAG porque es un booleano nativo de mpv
+    mpv_observe_property(m_mpv, 0, "pausing-for-cache", MPV_FORMAT_FLAG);
 
     // Setup wakeup callback
     mpv_set_wakeup_callback(m_mpv, wakeup, this);
@@ -363,6 +367,14 @@ void MpvObject::handleMpvEvents()
                     if (m_volume != vol) {
                         m_volume = vol;
                         emit volumeChanged();
+                    }
+                }
+            } else if (strcmp(prop->name, "pausing-for-cache") == 0) {
+                if (prop->format == MPV_FORMAT_FLAG) {
+                    bool buffering = *(int *)prop->data;
+                    if (m_bufferingForCache != buffering) {
+                        m_bufferingForCache = buffering;
+                        emit bufferingForCacheChanged();
                     }
                 }
             }

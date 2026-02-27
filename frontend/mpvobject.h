@@ -21,6 +21,7 @@ class MpvObject : public QQuickFramebufferObject
     Q_PROPERTY(double duration READ duration NOTIFY durationChanged)
     Q_PROPERTY(int volume READ volume WRITE setVolume NOTIFY volumeChanged)
     Q_PROPERTY(bool subtitlesEnabled READ subtitlesEnabled WRITE setSubtitlesEnabled NOTIFY subtitlesEnabledChanged)
+    Q_PROPERTY(bool bufferingForCache READ bufferingForCache NOTIFY bufferingForCacheChanged)
 
 public:
     explicit MpvObject(QQuickItem *parent = nullptr);
@@ -49,6 +50,8 @@ protected:
     bool subtitlesEnabled() const { return m_subtitlesEnabled; }
     void setSubtitlesEnabled(bool enabled);
 
+    bool bufferingForCache() const { return m_bufferingForCache; }
+
     // Commands
     Q_INVOKABLE void play();
     Q_INVOKABLE void pause();
@@ -66,6 +69,7 @@ signals:
     void durationChanged();
     void volumeChanged();
     void subtitlesEnabledChanged();
+    void bufferingForCacheChanged();
 
 private slots:
     void handleMpvEvents();
@@ -82,6 +86,7 @@ private:
     double m_duration;
     int m_volume;
     bool m_subtitlesEnabled;
+    bool m_bufferingForCache;
 
     void setProperty(const QString &name, const QVariant &value);
     QVariant getProperty(const QString &name) const;

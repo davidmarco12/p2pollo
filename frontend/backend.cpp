@@ -66,6 +66,15 @@ void Backend::playMagnet(const QString &magnetLink, int fileIndex)
 
 void Backend::stopStream()
 {
+    // Parar polling y limpiar estado INMEDIATAMENTE, sin esperar la respuesta HTTP.
+    // Esto evita que respuestas tardías del timer lleguen después de destruir PlayerPage.
+    stopStreamPathPolling();
+    stopProgressPolling();
+    m_streamPath.clear();
+    m_isStreamReady = false;
+    emit streamPathChanged();
+    emit isStreamReadyChanged();
+
     sendPostRequest("/api/stop", QJsonObject(), "stopStream");
 }
 
@@ -210,13 +219,9 @@ void Backend::handleNetworkReply(QNetworkReply *reply)
         startProgressPolling();
     }
     else if (context == "stopStream") {
+        // El cleanup ya fue hecho síncronamente en stopStream().
+        // Aquí solo notificamos que el backend terminó.
         emit streamStopped();
-        stopStreamPathPolling();
-        stopProgressPolling();
-        m_streamPath.clear();
-        m_isStreamReady = false;
-        emit streamPathChanged();
-        emit isStreamReadyChanged();
     }
     else if (context == "streamPath") {
         if (doc.isObject()) {
