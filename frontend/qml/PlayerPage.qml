@@ -9,6 +9,8 @@ Item {
     property string magnetLink: ""
     property var progress: null
     property bool controlsVisible: true
+    property var cachedSubtitleTracks: []
+    property var cachedAudioTracks: []
 
     signal backRequested()
 
@@ -453,11 +455,14 @@ Item {
                             onAboutToShow: {
                                 while (subtitlesMenu.count > 2)
                                     subtitlesMenu.removeItem(subtitlesMenu.itemAt(2))
-                                var tracks = mpvPlayer.getSubtitleTracks()
+                                // Usar cache (poblado en onTracksChanged) con fallback a consulta directa
+                                var tracks = root.cachedSubtitleTracks.length > 0
+                                    ? root.cachedSubtitleTracks
+                                    : mpvPlayer.getSubtitleTracks()
                                 for (var i = 0; i < tracks.length; i++) {
                                     var track = tracks[i]
-                                    var label = track.lang || "Unknown"
-                                    if (track.title) label += " - " + track.title
+                                    var label = track.lang ? track.lang.toUpperCase() : "Unknown"
+                                    if (track.title) label += " — " + track.title
                                     var item = menuItemComponent.createObject(subtitlesMenu, { text: label, trackId: track.id })
                                     subtitlesMenu.addItem(item)
                                 }
@@ -494,6 +499,60 @@ Item {
                                 onTriggered: {
                                     mpvPlayer.setSubtitleTrack(trackId)
                                     subtitlesButton.currentSubTrack = trackId
+                                }
+                            }
+                        }
+                    }
+
+                    // Audio tracks
+                    Button {
+                        id: audioButton
+                        visible: root.cachedAudioTracks.length > 1
+                        property int currentAudioTrack: -1
+
+                        onClicked: audioMenu.popup()
+
+                        background: Rectangle {
+                            color: audioButton.hovered ? "#33ffffff" : "transparent"
+                            border.color: "#66ffffff"
+                            border.width: 1; radius: 4
+                            implicitWidth: 42; implicitHeight: 28
+                        }
+                        contentItem: Text {
+                            text: {
+                                if (audioButton.currentAudioTrack <= 0) return "AUD"
+                                var t = root.cachedAudioTracks.find(function(x) { return x.id === audioButton.currentAudioTrack })
+                                return t && t.lang ? t.lang.toUpperCase().slice(0, 3) : "AUD"
+                            }
+                            color: "#f5f3f0"
+                            font.pixelSize: 11; font.bold: true
+                            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                        }
+
+                        Menu {
+                            id: audioMenu
+                            y: -height
+
+                            Repeater {
+                                model: root.cachedAudioTracks
+                                delegate: MenuItem {
+                                    property int trackId: modelData.id
+                                    text: {
+                                        var label = modelData.lang ? modelData.lang.toUpperCase() : "Track " + modelData.id
+                                        if (modelData.title) label += " — " + modelData.title
+                                        return label
+                                    }
+                                    indicator: Rectangle {
+                                        width: 8; height: 8; radius: 4
+                                        anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+                                        color: trackId === audioButton.currentAudioTrack ? "#ff6b35" : "transparent"
+                                        border.color: trackId === audioButton.currentAudioTrack ? "#ff6b35" : "#555"
+                                        border.width: 1
+                                    }
+                                    onTriggered: {
+                                        mpvPlayer.setAudioTrack(trackId)
+                                        audioButton.currentAudioTrack = trackId
+                                    }
                                 }
                             }
                         }
@@ -546,6 +605,19 @@ Item {
     Component.onDestruction: {
         mpvPlayer.paused = true
         backend.stopStream()
+    }
+
+    Connections {
+        target: mpvPlayer
+        function onTracksChanged() {
+            root.cachedSubtitleTracks = mpvPlayer.getSubtitleTracks()
+            root.cachedAudioTracks = mpvPlayer.getAudioTracks()
+            // Si hay audio tracks, seleccionar el primero como activo actual
+            if (root.cachedAudioTracks.length > 0 && audioButton.currentAudioTrack < 0) {
+                var selected = root.cachedAudioTracks.find(function(t) { return t.selected })
+                if (selected) audioButton.currentAudioTrack = selected.id
+            }
+        }
     }
 
     Connections {

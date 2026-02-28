@@ -290,6 +290,59 @@ QVariantList MpvObject::getSubtitleTracks()
     return tracks;
 }
 
+QVariantList MpvObject::getAudioTracks()
+{
+    QVariantList tracks;
+    if (!m_mpv) return tracks;
+
+    mpv_node node;
+    if (mpv_get_property(m_mpv, "track-list", MPV_FORMAT_NODE, &node) < 0)
+        return tracks;
+
+    if (node.format == MPV_FORMAT_NODE_ARRAY) {
+        mpv_node_list *list = node.u.list;
+        for (int i = 0; i < list->num; i++) {
+            mpv_node *item = &list->values[i];
+            if (item->format != MPV_FORMAT_NODE_MAP) continue;
+
+            mpv_node_list *map = item->u.list;
+            QVariantMap track;
+            QString type;
+
+            for (int j = 0; j < map->num; j++) {
+                QString key = QString::fromUtf8(map->keys[j]);
+                mpv_node *value = &map->values[j];
+
+                if (key == "type" && value->format == MPV_FORMAT_STRING) {
+                    type = QString::fromUtf8(value->u.string);
+                } else if (key == "id" && value->format == MPV_FORMAT_INT64) {
+                    track["id"] = (int)value->u.int64;
+                } else if (key == "lang" && value->format == MPV_FORMAT_STRING) {
+                    track["lang"] = QString::fromUtf8(value->u.string);
+                } else if (key == "title" && value->format == MPV_FORMAT_STRING) {
+                    track["title"] = QString::fromUtf8(value->u.string);
+                } else if (key == "selected" && value->format == MPV_FORMAT_FLAG) {
+                    track["selected"] = (bool)value->u.flag;
+                }
+            }
+
+            if (type == "audio")
+                tracks.append(track);
+        }
+    }
+
+    mpv_free_node_contents(&node);
+    return tracks;
+}
+
+void MpvObject::setAudioTrack(int trackId)
+{
+    if (!m_mpv) return;
+    qDebug() << "[MpvObject] Setting audio track to:" << trackId;
+    int64_t id = trackId;
+    mpv_set_property(m_mpv, "aid", MPV_FORMAT_INT64, &id);
+}
+
 void MpvObject::setSubtitleTrack(int trackId)
 {
     if (!m_mpv) return;
@@ -323,6 +376,7 @@ void MpvObject::handleMpvEvents()
         switch (event->event_id) {
         case MPV_EVENT_FILE_LOADED:
             qDebug() << "File loaded successfully";
+            emit tracksChanged();
             break;
         case MPV_EVENT_START_FILE:
             qDebug() << "Starting file playback";
@@ -334,6 +388,7 @@ void MpvObject::handleMpvEvents()
         }
         case MPV_EVENT_PLAYBACK_RESTART:
             qDebug() << "Playback restarted";
+            emit tracksChanged();
             break;
         case MPV_EVENT_PROPERTY_CHANGE: {
             mpv_event_property *prop = (mpv_event_property *)event->data;

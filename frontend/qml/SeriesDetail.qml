@@ -545,6 +545,50 @@ Item {
                                                     color: "#fff"
                                                 }
                                             }
+
+                                            // Seeds
+                                            RowLayout {
+                                                spacing: 4
+                                                visible: modelData.seeds > 0
+
+                                                Rectangle {
+                                                    width: 6; height: 6; radius: 3
+                                                    color: "#4caf50"
+                                                }
+
+                                                Text {
+                                                    text: modelData.seeds + " seeds"
+                                                    font.pixelSize: 11
+                                                    color: "#8a837c"
+                                                }
+                                            }
+                                        }
+
+                                        // Subtítulos
+                                        Flow {
+                                            Layout.fillWidth: true
+                                            spacing: 6
+                                            visible: modelData.subtitles && modelData.subtitles.length > 0
+
+                                            Repeater {
+                                                model: modelData.subtitles || []
+                                                delegate: Rectangle {
+                                                    width: subtitleText.width + 10
+                                                    height: 18
+                                                    color: "#171513"
+                                                    radius: 3
+                                                    border.color: "#2a2521"
+                                                    border.width: 1
+
+                                                    Text {
+                                                        id: subtitleText
+                                                        anchors.centerIn: parent
+                                                        text: modelData
+                                                        font.pixelSize: 10
+                                                        color: "#8a837c"
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
 

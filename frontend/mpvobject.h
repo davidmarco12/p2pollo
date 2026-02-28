@@ -61,6 +61,8 @@ protected:
     Q_INVOKABLE void loadSubtitleFile(const QString &path);
     Q_INVOKABLE QVariantList getSubtitleTracks();
     Q_INVOKABLE void setSubtitleTrack(int trackId);
+    Q_INVOKABLE QVariantList getAudioTracks();
+    Q_INVOKABLE void setAudioTrack(int trackId);
 
 signals:
     void sourceChanged();
@@ -70,6 +72,7 @@ signals:
     void volumeChanged();
     void subtitlesEnabledChanged();
     void bufferingForCacheChanged();
+    void tracksChanged();
 
 private slots:
     void handleMpvEvents();
