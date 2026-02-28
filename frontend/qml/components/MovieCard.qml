@@ -11,18 +11,18 @@ Rectangle {
     signal clicked()
 
     width: 160
-    height: 280
+    height: 290
     color: "transparent"
 
     ColumnLayout {
         anchors.fill: parent
         spacing: 8
 
-        // Poster with hover effect
+        // Poster
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 240
-            color: "#1a1613"
+            color: "#171513"
             radius: 10
             clip: true
 
@@ -35,30 +35,28 @@ Rectangle {
                 smooth: true
                 mipmap: true
 
-                // Loading placeholder
                 Rectangle {
                     anchors.fill: parent
-                    color: "#1a1613"
+                    color: "#171513"
                     visible: parent.status !== Image.Ready
                     z: -1
 
-                    // Loading indicator
                     BusyIndicator {
                         anchors.centerIn: parent
                         running: parent.visible && parent.parent.status === Image.Loading
-                        width: 32
-                        height: 32
+                        width: 28
+                        height: 28
                     }
                 }
             }
 
-            // Series badge (top-left)
+            // Badge TV (series)
             Rectangle {
                 anchors.top: parent.top
                 anchors.left: parent.left
                 anchors.margins: 8
-                width: 32
-                height: 20
+                width: 30
+                height: 18
                 color: "#00a8e1"
                 radius: 4
                 visible: root.isSeries
@@ -66,7 +64,7 @@ Rectangle {
                 Text {
                     anchors.centerIn: parent
                     text: "TV"
-                    font.pixelSize: 10
+                    font.pixelSize: 9
                     font.weight: Font.Bold
                     color: "#fff"
                 }
@@ -77,56 +75,55 @@ Rectangle {
                 anchors.top: parent.top
                 anchors.right: parent.right
                 anchors.margins: 8
-                width: 50
-                height: 24
-                color: root.isSeries ? "#00a8e133" : "#ff6b3533"
+                width: ratingRow.width + 12
+                height: 22
+                color: "#0a090844"
                 radius: 6
-                border.color: root.isSeries ? "#00a8e1" : "#ff6b35"
+                border.color: root.isSeries ? "#00a8e155" : "#ff6b3555"
                 border.width: 1
                 visible: movie && movie.rating > 0
 
-                RowLayout {
+                Row {
+                    id: ratingRow
                     anchors.centerIn: parent
-                    spacing: 2
+                    spacing: 3
 
                     Text {
                         text: "★"
-                        font.pixelSize: 12
+                        font.pixelSize: 10
                         color: root.isSeries ? "#00a8e1" : "#ff6b35"
                     }
 
                     Text {
                         text: movie ? movie.rating.toFixed(1) : ""
-                        font.pixelSize: 11
-                        font.weight: Font.Medium
+                        font.pixelSize: 10
+                        font.weight: Font.SemiBold
                         color: root.isSeries ? "#00a8e1" : "#ff6b35"
                     }
                 }
             }
 
-            // Hover overlay with gradient
+            // Hover overlay
             Rectangle {
                 anchors.fill: parent
                 gradient: Gradient {
                     GradientStop { position: 0.0; color: "#00000000" }
-                    GradientStop { position: 0.6; color: "#66000000" }
+                    GradientStop { position: 0.5; color: "#55000000" }
                     GradientStop { position: 1.0; color: "#cc000000" }
                 }
                 opacity: mouseArea.containsMouse ? 1.0 : 0
-                Behavior on opacity { NumberAnimation { duration: 300 } }
+                Behavior on opacity { NumberAnimation { duration: 250 } }
 
-                // Play icon on hover
                 Text {
                     anchors.centerIn: parent
                     text: "▶"
-                    font.pixelSize: 48
-                    color: root.isSeries ? "#00a8e1" : "#ff6b35"
-                    opacity: mouseArea.containsMouse ? 1.0 : 0
-                    Behavior on opacity { NumberAnimation { duration: 300 } }
+                    font.pixelSize: 44
+                    color: "#fff"
+                    opacity: mouseArea.containsMouse ? 0.9 : 0
+                    Behavior on opacity { NumberAnimation { duration: 250 } }
                 }
             }
 
-            // Click area
             MouseArea {
                 id: mouseArea
                 anchors.fill: parent
@@ -135,14 +132,13 @@ Rectangle {
                 cursorShape: Qt.PointingHandCursor
             }
 
-            // Scale animation on hover
-            scale: mouseArea.containsMouse ? 1.05 : 1.0
+            scale: mouseArea.containsMouse ? 1.04 : 1.0
             Behavior on scale {
-                NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
+                NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
             }
         }
 
-        // Title and year
+        // Título y año
         ColumnLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -150,19 +146,20 @@ Rectangle {
 
             Text {
                 text: movie ? movie.title : ""
-                font.pixelSize: 13
+                font.pixelSize: 12
                 font.weight: Font.Medium
-                color: "#f5f3f0"
+                color: "#e8e4e0"
                 wrapMode: Text.WordWrap
                 maximumLineCount: 2
                 elide: Text.ElideRight
                 Layout.fillWidth: true
+                lineHeight: 1.3
             }
 
             Text {
                 text: movie ? movie.year : ""
                 font.pixelSize: 11
-                color: "#8a837c"
+                color: "#5a5551"
             }
         }
     }

@@ -40,45 +40,77 @@ Item {
             anchors.fill: parent
             spacing: 0
 
-            // Header
+            // Header tipo breadcrumb
             Rectangle {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 60
-                color: "#1a1613"
+                Layout.preferredHeight: 52
+                color: "#0d0c0b"
 
                 RowLayout {
                     anchors.fill: parent
-                    anchors.leftMargin: 16
-                    anchors.rightMargin: 16
-                    spacing: 12
+                    anchors.leftMargin: 28
+                    anchors.rightMargin: 28
+                    spacing: 8
 
-                    Button {
-                        text: "← Volver"
-                        font.pixelSize: 14
-                        onClicked: root.backRequested()
+                    Text {
+                        text: "Series"
+                        font.pixelSize: 13
+                        color: "#8a837c"
 
-                        background: Rectangle {
-                            color: parent.hovered ? "#2a2521" : "transparent"
-                            radius: 10
-                        }
-
-                        contentItem: Text {
-                            text: parent.text
-                            color: "#ff6b35"
-                            font: parent.font
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.backRequested()
                         }
                     }
 
                     Text {
+                        text: "/"
+                        font.pixelSize: 13
+                        color: "#2a2521"
+                    }
+
+                    Text {
                         text: series ? series.title : ""
-                        font.pixelSize: 18
-                        font.weight: Font.Medium
+                        font.pixelSize: 13
                         color: "#f5f3f0"
                         elide: Text.ElideRight
                         Layout.fillWidth: true
                     }
+
+                    Item { Layout.fillWidth: true }
+
+                    Rectangle {
+                        width: 80
+                        height: 30
+                        color: "transparent"
+                        border.color: "#2a2521"
+                        border.width: 1
+                        radius: 6
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "← Volver"
+                            font.pixelSize: 12
+                            color: "#8a837c"
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.backRequested()
+                            hoverEnabled: true
+                            onEntered: parent.border.color = "#ff6b35"
+                            onExited: parent.border.color = "#2a2521"
+                        }
+                    }
+                }
+
+                Rectangle {
+                    anchors.bottom: parent.bottom
+                    width: parent.width
+                    height: 1
+                    color: "#1a1613"
                 }
             }
 
