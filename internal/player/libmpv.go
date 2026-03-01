@@ -1,3 +1,5 @@
+//go:build !android
+
 // Package player proporciona un controlador de mpv usando libmpv (embedding)
 package player
 

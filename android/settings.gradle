@@ -1,0 +1,19 @@
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+        // Repositorio local para golib.aar (generado por gomobile)
+        flatDir { dirs 'app/libs' }
+    }
+}
+
+rootProject.name = "p2pollo"
+include ':app'

@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"net/http"
@@ -22,8 +22,8 @@ func (s *Server) handlePlayMagnet(c *gin.Context) {
 	// Detener streaming anterior
 	s.streamer.Stop()
 
-	// Iniciar nuevo streaming (async) en modo headless (sin reproductor externo)
-	// Qt Multimedia se encargará de la reproducción
+	// Iniciar nuevo streaming (async) en modo headless
+	// El reproductor (Qt o Android mpv) se encarga del playback via /api/stream
 	s.streamer.StartStreamAsync(req.MagnetLink, req.FileIndex, true)
 
 	c.JSON(http.StatusOK, gin.H{"status": "streaming started"})
@@ -75,6 +75,5 @@ func (s *Server) handleStreamVideo(c *gin.Context) {
 		return
 	}
 
-	// Servir el archivo con soporte para Range requests (streaming)
 	c.File(path)
 }

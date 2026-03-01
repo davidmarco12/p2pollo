@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"fmt"
@@ -73,7 +73,6 @@ func (s *Server) handleGetSeriesDetails(c *gin.Context) {
 	var show *tvmaze.TVShow
 	var err error
 
-	// Buscar por IMDB ID primero, luego por nombre
 	if req.ImdbID != "" {
 		show, err = s.tvmaze.GetShowByIMDB(req.ImdbID)
 	}
@@ -116,7 +115,6 @@ func (s *Server) handleGetSeriesDetails(c *gin.Context) {
 		apiSeasons = append(apiSeasons, SeasonGroup{Number: season.Number, Episodes: episodes})
 	}
 
-	// Actualizar IMDB ID si lo obtuvimos de TVmaze
 	if req.ImdbID == "" && show.Externals.IMDB != "" {
 		req.ImdbID = show.Externals.IMDB
 	}
@@ -147,7 +145,6 @@ func (s *Server) handleGetEpisodeTorrents(c *gin.Context) {
 
 	var torrents []TorrentOption
 
-	// Intentar EZTV primero (tiene datos por IMDB ID → más preciso)
 	if imdbID != "" {
 		s.log.Infof("Buscando en EZTV: %s S%02dE%02d (imdb: %s)", title, season, episode, imdbID)
 		eztvTorrents, eztvErr := s.eztv.GetEpisodeTorrents(imdbID, season, episode)
@@ -169,7 +166,6 @@ func (s *Server) handleGetEpisodeTorrents(c *gin.Context) {
 		}
 	}
 
-	// Complementar con scrapers si EZTV no devolvió nada
 	if len(torrents) == 0 && title != "" {
 		query := fmt.Sprintf("%s S%02dE%02d", title, season, episode)
 		s.log.Infof("Buscando en scrapers: %s", query)

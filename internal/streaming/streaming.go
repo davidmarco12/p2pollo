@@ -42,6 +42,36 @@ type Service struct {
 	mu sync.RWMutex
 }
 
+// NewServiceHeadless crea un servicio de streaming sin reproductor de video.
+// Para uso en Android donde el playback lo maneja la app nativa vía mpv-android.
+func NewServiceHeadless(cfg *config.Config) (*Service, error) {
+	client, err := torrent.New(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("error creando cliente torrent: %w", err)
+	}
+
+	log := logrus.New()
+	log.SetLevel(logrus.InfoLevel)
+	if cfg.Logging.Level == "debug" {
+		log.SetLevel(logrus.DebugLevel)
+	}
+
+	httpSrv := httpserver.New(log)
+	if err := httpSrv.Start(); err != nil {
+		client.Close()
+		return nil, fmt.Errorf("error iniciando servidor HTTP: %w", err)
+	}
+
+	return &Service{
+		cfg:        cfg,
+		client:     client,
+		player:     nil, // Sin reproductor — Android maneja el playback
+		httpServer: httpSrv,
+		log:        log,
+		headless:   true,
+	}, nil
+}
+
 // NewService crea un nuevo servicio de streaming.
 // Inicializa el cliente torrent y mpv.
 func NewService(cfg *config.Config) (*Service, error) {
@@ -145,7 +175,7 @@ func (s *Service) startStreamInternal(ctx context.Context, magnetURI string, fil
 		headless := s.headless
 		s.mu.Unlock()
 
-		if headless {
+		if headless || s.player == nil {
 			// Modo headless: solo descargar, no iniciar reproductor
 			s.log.Infof("Buffer listo (headless mode), archivo disponible en: %s", tmpPath)
 			return nil

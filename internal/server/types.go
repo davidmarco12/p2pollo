@@ -1,4 +1,4 @@
-package main
+package server
 
 // --- Tipos del catálogo ---
 
@@ -30,9 +30,9 @@ type TorrentOption struct {
 	Seeds      int      `json:"seeds"`
 	Peers      int      `json:"peers"`
 	MagnetLink string   `json:"magnetLink"`
-	Provider   string   `json:"provider"`   // rargb, thepiratebay, yts
-	FileName   string   `json:"fileName"`   // Nombre del archivo
-	Subtitles  []string `json:"subtitles"`  // Idiomas de subtítulos
+	Provider   string   `json:"provider"`
+	FileName   string   `json:"fileName"`
+	Subtitles  []string `json:"subtitles"`
 }
 
 type MovieDetailResponse struct {
@@ -76,7 +76,7 @@ type SeriesDetailResponse struct {
 
 type PlayRequest struct {
 	MagnetLink string `json:"magnetLink"`
-	FileIndex  int    `json:"fileIndex"` // -1 para auto-selección
+	FileIndex  int    `json:"fileIndex"`
 }
 
 type StreamPathResponse struct {

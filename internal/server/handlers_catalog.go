@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"fmt"
@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"p2pollo/internal/catalog"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -90,11 +91,9 @@ func (s *Server) handleGetMovieDetails(c *gin.Context) {
 		Genres:    req.Genres,
 	}
 
-	// 1. Obtener descripción de YTS
 	detail, err := s.catalog.Details(movie)
 	if err != nil {
 		s.log.Warnf("Error obteniendo detalles de YTS: %v", err)
-		// Continuar con descripción vacía
 		detail = &catalog.MovieDetail{
 			Movie:       movie,
 			Description: "",
@@ -102,7 +101,6 @@ func (s *Server) handleGetMovieDetails(c *gin.Context) {
 		}
 	}
 
-	// 2. Buscar torrents en rargb y thepiratebay
 	searchQuery := req.Title
 	if req.Year > 0 {
 		searchQuery = fmt.Sprintf("%s %d", req.Title, req.Year)
@@ -116,13 +114,10 @@ func (s *Server) handleGetMovieDetails(c *gin.Context) {
 		return
 	}
 
-	// 3. Convertir resultados a TorrentOption
-	// Nota: No filtramos por extensión porque la mayoría de torrents no la incluyen en el nombre
-	// rargb y ThePirateBay ya se especializan en películas/videos
 	torrents := []TorrentOption{}
 	for _, result := range searchResults {
 		torrents = append(torrents, TorrentOption{
-			Hash:       "", // rargb/thepiratebay no proveen hash directamente
+			Hash:       "",
 			Quality:    extractQuality(result.Name),
 			Type:       extractType(result.Name),
 			Size:       result.Size,
@@ -130,8 +125,8 @@ func (s *Server) handleGetMovieDetails(c *gin.Context) {
 			Peers:      result.Leechers,
 			MagnetLink: result.MagnetLink,
 			Provider:   result.Source,
-			FileName:   result.Name,      // Usar el nombre completo del torrent
-			Subtitles:  result.Subtitles, // Subtítulos si están disponibles
+			FileName:   result.Name,
+			Subtitles:  result.Subtitles,
 		})
 	}
 
