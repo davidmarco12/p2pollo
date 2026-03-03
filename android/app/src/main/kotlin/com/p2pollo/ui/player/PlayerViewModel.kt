@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.p2pollo.data.Repository
 import com.p2pollo.mpv.MpvLib
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -79,33 +80,51 @@ class PlayerViewModel : ViewModel(), MpvLib.EventObserver {
     fun stopStream() {
         progressJob?.cancel()
         positionJob?.cancel()
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             Repository.stopStream()
+            MpvLib.command(arrayOf("stop"))
         }
-        MpvLib.command(arrayOf("stop"))
     }
 
     fun togglePlayPause() {
         val paused = !_state.value.isPaused
-        MpvLib.setPropertyBoolean("pause", paused)
         _state.value = _state.value.copy(isPaused = paused)
+        viewModelScope.launch(Dispatchers.IO) {
+            MpvLib.setPropertyBoolean("pause", paused)
+        }
     }
 
     fun seek(seconds: Double) {
-        MpvLib.command(arrayOf("seek", seconds.toString(), "absolute"))
+        viewModelScope.launch(Dispatchers.IO) {
+            MpvLib.command(arrayOf("seek", seconds.toString(), "absolute"))
+        }
     }
 
     fun setVolume(volume: Int) {
-        MpvLib.setPropertyInt("volume", volume)
         _state.value = _state.value.copy(volume = volume)
+        viewModelScope.launch(Dispatchers.IO) {
+            MpvLib.setPropertyInt("volume", volume)
+        }
     }
 
     fun cycleSubtitles() {
-        MpvLib.command(arrayOf("cycle", "sub"))
+        viewModelScope.launch(Dispatchers.IO) {
+            MpvLib.command(arrayOf("cycle", "sub"))
+        }
+    }
+
+    /** Pausa o reanuda el polling de posición según visibilidad de controles. */
+    fun setPositionPollingEnabled(enabled: Boolean) {
+        if (enabled) {
+            if (positionJob?.isActive != true) startPositionPolling()
+        } else {
+            positionJob?.cancel()
+            positionJob = null
+        }
     }
 
     private fun startProgressPolling() {
-        progressJob = viewModelScope.launch {
+        progressJob = viewModelScope.launch(Dispatchers.IO) {
             while (true) {
                 Repository.getProgress().onSuccess { p ->
                     _state.value = _state.value.copy(
@@ -120,7 +139,7 @@ class PlayerViewModel : ViewModel(), MpvLib.EventObserver {
     }
 
     private fun startPositionPolling() {
-        positionJob = viewModelScope.launch {
+        positionJob = viewModelScope.launch(Dispatchers.IO) {
             while (true) {
                 val pos = MpvLib.getPropertyDouble("time-pos")
                 val dur = MpvLib.getPropertyDouble("duration")

@@ -59,9 +59,6 @@ static int processOneMpvEvent(JNIEnv *env) {
     mpv_event *event = mpv_wait_event(mpv, 0);
     if (event->event_id == MPV_EVENT_NONE) return 0;
 
-    // Log todos los eventos para diagnóstico de pantalla negra
-    LOGI("mpv event: %d (%s)", event->event_id, mpv_event_name(event->event_id));
-
     if (event->event_id == MPV_EVENT_LOG_MESSAGE) {
         auto *msg = (mpv_event_log_message *)event->data;
         if (!msg->prefix || !msg->text) return 0;
@@ -157,11 +154,16 @@ Java_com_p2pollo_mpv_MpvLib_init(JNIEnv *env, jobject obj) {
     mpv_set_option_string(mpv, "gpu-context", "android");
     mpv_set_option_string(mpv, "opengl-es", "yes");
     mpv_set_option_string(mpv, "hwdec", "mediacodec");
-    // sub-ass=no: usa el renderizador de texto propio de mpv (fuentes integradas,
-    // no depende de fontconfig ni libass para encontrar fuentes en Android)
-    mpv_set_option_string(mpv, "sub-ass", "no");
+    mpv_set_option_string(mpv, "sub-ass", "yes");
     mpv_set_option_string(mpv, "sub-visibility", "yes");
+    // fontconfig no existe en Android; el font dir lo configura Kotlin en setOptionString
+    // antes de que se llame init(). sub-font-provider=none deshabilita la búsqueda de
+    // fontconfig y usa solo los fonts en sub-fonts-dir.
+    mpv_set_option_string(mpv, "sub-font-provider", "none");
     mpv_set_option_string(mpv, "keep-open", "yes");
+    // Limitar cache del demuxer: stream local no necesita mucho buffer
+    mpv_set_option_string(mpv, "demuxer-max-bytes", "10M");
+    mpv_set_option_string(mpv, "demuxer-readahead-secs", "5");
     mpv_request_log_messages(mpv, "warn");
 
     LOGI("init: llamando mpv_initialize...");

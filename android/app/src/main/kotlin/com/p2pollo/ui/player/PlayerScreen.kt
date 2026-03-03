@@ -3,9 +3,6 @@ package com.p2pollo.ui.player
 import android.graphics.SurfaceTexture
 import android.view.Surface
 import android.view.TextureView
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -24,16 +21,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
-import androidx.tv.material3.*
+import androidx.compose.material3.Text
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.tv.material3.ExperimentalTvMaterial3Api
 import android.util.Log
 import android.view.KeyEvent
 import com.p2pollo.PlayerKeyEventBus
 import com.p2pollo.mpv.MpvLib
 import kotlinx.coroutines.delay
+import java.io.File
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -53,6 +54,10 @@ fun PlayerScreen(
     // para que wid esté configurado antes de mpv_initialize().
     DisposableEffect(Unit) {
         MpvLib.create(context)
+        // Configurar fonts para subtítulos ANTES de init() / mpv_initialize().
+        // Copia un font del sistema al directorio privado de la app y apunta
+        // sub-fonts-dir a él, para que libass pueda renderizar sin fontconfig.
+        setupMpvFonts(context)
         MpvLib.startEventThread()
         onDispose {
             viewModel.stopStream()
@@ -93,6 +98,9 @@ fun PlayerScreen(
             controlsVisible = false
             try { hiddenFocusRequester.requestFocus() } catch (_: Exception) {}
         }
+        // Pausar polling de posición cuando controles están ocultos (evita
+        // recomposiciones de Slider cada 500ms mientras el video se reproduce)
+        viewModel.setPositionPollingEnabled(controlsVisible)
     }
 
     // El Box NO es focusable — así el D-pad puede navegar a los hijos (botones).
@@ -134,13 +142,8 @@ fun PlayerScreen(
             )
         }
 
-        // Controles
-        AnimatedVisibility(
-            visible = controlsVisible && !state.isPreparing,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier.align(Alignment.BottomCenter)
-        ) {
+        // Controles — sin AnimatedVisibility para evitar spike de GPU durante transición
+        if (controlsVisible && !state.isPreparing) {
             PlayerControls(
                 state = state,
                 onBack = {
@@ -150,7 +153,8 @@ fun PlayerScreen(
                 onPlayPause = { viewModel.togglePlayPause() },
                 onSeek = { seconds -> viewModel.seek(seconds) },
                 onVolumeChange = { v -> viewModel.setVolume(v) },
-                onCycleSubtitles = { viewModel.cycleSubtitles() }
+                onCycleSubtitles = { viewModel.cycleSubtitles() },
+                modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
     }
@@ -248,6 +252,28 @@ fun BufferingOverlay(
     }
 }
 
+/** Botón simple sin animaciones de TV — más ligero para SoC Amlogic. */
+@Composable
+private fun PlayerButton(
+    onClick: () -> Unit,
+    containerColor: Color = Color(0xFF2A2320),
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    var focused by remember { mutableStateOf(false) }
+    Box(
+        modifier = modifier
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(onClick = onClick)
+            .clip(RoundedCornerShape(4.dp))
+            .background(if (focused) Color(0xFF5A5350) else containerColor)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        content()
+    }
+}
+
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun PlayerControls(
@@ -256,10 +282,11 @@ fun PlayerControls(
     onPlayPause: () -> Unit,
     onSeek: (Double) -> Unit,
     onVolumeChange: (Int) -> Unit,
-    onCycleSubtitles: () -> Unit
+    onCycleSubtitles: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .background(
                 androidx.compose.ui.graphics.Brush.verticalGradient(
@@ -268,18 +295,24 @@ fun PlayerControls(
             )
             .padding(horizontal = 48.dp, vertical = 32.dp)
     ) {
-        // Barra de progreso
+        // Barra de progreso — Box simple, sin Slider (demasiado pesado para Amlogic)
         if (state.duration > 0) {
-            Slider(
-                value = (state.position / state.duration).toFloat().coerceIn(0f, 1f),
-                onValueChange = { v -> onSeek(v * state.duration) },
-                modifier = Modifier.fillMaxWidth(),
-                colors = SliderDefaults.colors(
-                    thumbColor = Color(0xFFFF6B35),
-                    activeTrackColor = Color(0xFFFF6B35),
-                    inactiveTrackColor = Color(0xFF3A3330)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(Color(0xFF3A3330))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth((state.position / state.duration).toFloat().coerceIn(0f, 1f))
+                        .fillMaxHeight()
+                        .background(Color(0xFFFF6B35))
                 )
-            )
+            }
+
+            Spacer(Modifier.height(8.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -305,64 +338,61 @@ fun PlayerControls(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Button(
-                onClick = onBack,
-                colors = ButtonDefaults.colors(containerColor = Color(0xFF2A2320))
-            ) {
+            PlayerButton(onClick = onBack) {
                 Text("← Salir", color = Color.White)
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Button(
-                    onClick = { onSeek(state.position - 10.0) },
-                    colors = ButtonDefaults.colors(containerColor = Color(0xFF2A2320))
-                ) {
+                PlayerButton(onClick = { onSeek(state.position - 10.0) }) {
                     Text("−10s", color = Color.White)
                 }
 
-                Button(
+                PlayerButton(
                     onClick = onPlayPause,
-                    colors = ButtonDefaults.colors(containerColor = Color(0xFFFF6B35))
+                    containerColor = Color(0xFFFF6B35)
                 ) {
                     Text(if (state.isPaused) "▶" else "⏸", color = Color.White, fontSize = 20.sp)
                 }
 
-                Button(
-                    onClick = { onSeek(state.position + 10.0) },
-                    colors = ButtonDefaults.colors(containerColor = Color(0xFF2A2320))
-                ) {
+                PlayerButton(onClick = { onSeek(state.position + 10.0) }) {
                     Text("+10s", color = Color.White)
                 }
 
-                Button(
+                PlayerButton(
                     onClick = onCycleSubtitles,
-                    colors = ButtonDefaults.colors(
-                        containerColor = if (state.subTrack > 0) Color(0xFFFF6B35) else Color(0xFF2A2320)
-                    )
+                    containerColor = if (state.subTrack > 0) Color(0xFFFF6B35) else Color(0xFF2A2320)
                 ) {
                     Text("CC", color = Color.White)
                 }
             }
 
-            // Volume
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text("Vol", color = Color(0xFF8A837C), fontSize = 12.sp)
-                Slider(
-                    value = state.volume / 100f,
-                    onValueChange = { v -> onVolumeChange((v * 100).toInt()) },
-                    modifier = Modifier.width(120.dp),
-                    colors = SliderDefaults.colors(
-                        thumbColor = Color(0xFFFF6B35),
-                        activeTrackColor = Color(0xFFFF6B35),
-                        inactiveTrackColor = Color(0xFF3A3330)
-                    )
-                )
-            }
+            // Volumen como texto — el slider es demasiado pesado para este SoC
+            Text(
+                text = "Vol ${state.volume}%",
+                color = Color(0xFF8A837C),
+                fontSize = 12.sp
+            )
         }
     }
+}
+
+/** Copia un font del sistema al directorio privado y configura sub-fonts-dir en mpv. */
+private fun setupMpvFonts(context: android.content.Context) {
+    val fontsDir = File(context.filesDir, "mpv-fonts")
+    fontsDir.mkdirs()
+    // Intentar copiar el primer font disponible del sistema
+    val candidates = listOf("Roboto-Regular.ttf", "NotoSans-Regular.ttf", "DroidSans.ttf")
+    for (name in candidates) {
+        val src = File("/system/fonts/$name")
+        if (src.exists()) {
+            try { src.copyTo(File(fontsDir, name), overwrite = false) } catch (_: Exception) {}
+            break
+        }
+    }
+    // Apuntar mpv al directorio (aunque esté vacío, /system/fonts como fallback)
+    val dir = if (fontsDir.listFiles()?.isNotEmpty() == true) fontsDir.absolutePath
+              else "/system/fonts"
+    MpvLib.setOptionString("sub-fonts-dir", dir)
 }
 
 private fun formatTime(seconds: Double): String {
