@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
+data class SubTrack(val id: Int, val lang: String, val label: String)
+
 data class PlayerState(
     val isPreparing: Boolean = true,
     val streamUrl: String = "",
@@ -23,6 +25,8 @@ data class PlayerState(
     val downloadSpeed: Long = 0,
     val peers: Int = 0,
     val subTrack: Int = 0,  // 0 = sin subtítulos, >0 = track activo
+    val subTracks: List<SubTrack> = emptyList(),
+    val showSubMenu: Boolean = false,
     val error: String? = null
 )
 
@@ -62,10 +66,12 @@ class PlayerViewModel : ViewModel(), MpvLib.EventObserver {
             startProgressPolling()
 
             // Esperar a que stream esté listo, polling cada segundo.
-            // resp.path es un path local del filesystem; el servidor Go lo sirve via /api/stream.
+            // Usamos file:// directo al archivo temporal en lugar de HTTP para evitar
+            // el loop de reconnects de mpv al buscar el índice MKV al final del archivo,
+            // que causaba que MediaCodec HEVC no pudiera inicializarse (surface NULL).
             Repository.streamPathFlow().collect { resp ->
-                if (resp.ready) {
-                    val url = "http://127.0.0.1:9876/api/stream"
+                if (resp.ready && resp.path.isNotBlank()) {
+                    val url = "file://${resp.path}"
                     Log.i(TAG, "Stream listo: $url")
                     _state.value = _state.value.copy(
                         streamUrl = url,
@@ -82,7 +88,10 @@ class PlayerViewModel : ViewModel(), MpvLib.EventObserver {
         positionJob?.cancel()
         viewModelScope.launch(Dispatchers.IO) {
             Repository.stopStream()
-            MpvLib.command(arrayOf("stop"))
+            // No llamar MpvLib.command("stop") aquí — mpv_terminate_destroy() en
+            // onDispose ya maneja el shutdown completo. Llamarlo antes causa
+            // "assertion !queue->lock_requests failed" (SIGABRT) en dispatch.c
+            // cuando destroy() llega mientras el stop command aún tiene la queue bloqueada.
         }
     }
 
@@ -107,9 +116,60 @@ class PlayerViewModel : ViewModel(), MpvLib.EventObserver {
         }
     }
 
-    fun cycleSubtitles() {
+    fun toggleSubMenu() {
+        _state.value = _state.value.copy(showSubMenu = !_state.value.showSubMenu)
+    }
+
+    fun dismissSubMenu() {
+        _state.value = _state.value.copy(showSubMenu = false)
+    }
+
+    fun selectSubtitle(id: Int) {
+        _state.value = _state.value.copy(subTrack = id, showSubMenu = false)
         viewModelScope.launch(Dispatchers.IO) {
-            MpvLib.command(arrayOf("cycle", "sub"))
+            if (id == 0) {
+                // "no" desactiva subtítulos; setPropertyString porque sid acepta "no" como string
+                MpvLib.command(arrayOf("set", "sid", "no"))
+                MpvLib.setPropertyBoolean("sub-visibility", false)
+            } else {
+                // Usar el comando "set" en lugar de setPropertyInt para que mpv maneje
+                // correctamente la conversión del tipo de la propiedad sid.
+                MpvLib.command(arrayOf("set", "sid", id.toString()))
+                // sub-visibility debe estar en true explícitamente — setPropertyInt en sid
+                // no garantiza que la visibilidad se active si estaba en false previamente.
+                MpvLib.setPropertyBoolean("sub-visibility", true)
+            }
+        }
+    }
+
+    private fun loadSubtitleTracks() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val json = MpvLib.getPropertyString("track-list") ?: return@launch
+            val tracks = parseSubtitleTracks(json)
+            _state.value = _state.value.copy(subTracks = tracks)
+        }
+    }
+
+    private fun parseSubtitleTracks(json: String): List<SubTrack> {
+        return try {
+            val arr = org.json.JSONArray(json)
+            val subs = mutableListOf<SubTrack>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                if (obj.optString("type") != "sub") continue
+                val id = obj.getInt("id")
+                val lang = obj.optString("lang", "")
+                val title = obj.optString("title", "")
+                val label = when {
+                    title.isNotBlank() -> title
+                    lang.isNotBlank() -> lang.uppercase()
+                    else -> "Track $id"
+                }
+                subs.add(SubTrack(id, lang, label))
+            }
+            subs
+        } catch (_: Exception) {
+            emptyList()
         }
     }
 
@@ -184,6 +244,7 @@ class PlayerViewModel : ViewModel(), MpvLib.EventObserver {
             MpvLib.EVENT_FILE_LOADED -> {
                 Log.i(TAG, "Archivo cargado en mpv")
                 _state.value = _state.value.copy(isPreparing = false)
+                loadSubtitleTracks()
             }
             MpvLib.EVENT_END_FILE -> {
                 Log.i(TAG, "Reproducción terminada")

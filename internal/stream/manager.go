@@ -282,6 +282,15 @@ func (m *Manager) Stop() {
 	}
 	m.wg.Wait()
 
+	// Drop el torrent del cliente anacrolix: libera conexiones TCP a peers,
+	// detiene toda descarga de piezas y libera memoria interna del cliente.
+	// Sin esto el torrent sigue descargando y escribiendo a eMMC en background
+	// aunque el usuario haya salido del player → iowait elevado → ANR.
+	if m.t != nil {
+		m.t.Drop()
+		m.t = nil
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.tmpFile != nil {
@@ -470,9 +479,11 @@ func (m *Manager) downloadSequential(ctx context.Context) {
 		return
 	}
 
-	// SetReadahead prefetcha 32 MB adelante con PiecePriorityReadahead.
+	// SetReadahead prefetcha 8 MB adelante con PiecePriorityReadahead.
+	// 32 MB era demasiado para dispositivos con 2 GB RAM (Flowbox F1):
+	// consumía memoria del torrent client + presión en eMMC innecesariamente.
 	if ra, ok := reader.(readerReadahead); ok {
-		ra.SetReadahead(32 * 1024 * 1024)
+		ra.SetReadahead(8 * 1024 * 1024)
 	}
 
 	buf := make([]byte, 64*1024)

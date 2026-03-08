@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -29,6 +30,12 @@ func Start(storageDir string) string {
 	if srv != nil {
 		return "already running"
 	}
+
+	// Limitar el runtime de Go a 2 cores en el Flowbox F1 (4 cores, 2GB RAM).
+	// Sin este límite, el cliente torrent satura los 4 cores → el scheduler de Android
+	// no puede darle tiempo al main thread → ANR al presionar teclas durante la descarga.
+	// Dejamos 2 cores libres para Android UI, mpv y MediaCodec.
+	runtime.GOMAXPROCS(2)
 
 	// Limpiar archivos temporales huérfanos de sesiones anteriores (crasheos, etc.)
 	cleanTempFiles(storageDir)

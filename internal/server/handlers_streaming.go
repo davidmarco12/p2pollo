@@ -1,10 +1,88 @@
 package server
 
 import (
+	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
+
+// streamingReader es un io.ReadSeeker que bloquea lecturas más allá del headWritten.
+// Evita que mpv reciba ceros del área pre-alocada pero aún no descargada,
+// lo que causaba freeze/corrupción en el parser MKV/MP4.
+// Cuando el context se cancela (cliente desconectado), retorna io.EOF.
+type streamingReader struct {
+	f         *os.File
+	pos       int64
+	totalSize int64
+	getHead   func() int64
+	done      <-chan struct{}
+}
+
+// maxBlockGap: si el seek está dentro de este margen del frontier, esperamos
+// a que el torrent descargue. Si está más lejos (ej: mpv buscando el MKV index
+// al final del archivo), retornamos EOF para que mpv use modo lineal sin índice.
+const maxBlockGap = 2 * 1024 * 1024 // 2 MB
+
+func (r *streamingReader) Read(buf []byte) (int, error) {
+	for {
+		select {
+		case <-r.done:
+			return 0, io.EOF
+		default:
+		}
+
+		if r.pos >= r.totalSize {
+			return 0, io.EOF
+		}
+
+		head := r.getHead()
+		if r.pos < head {
+			available := head - r.pos
+			if int64(len(buf)) > available {
+				buf = buf[:available]
+			}
+			n, err := r.f.ReadAt(buf, r.pos)
+			r.pos += int64(n)
+			return n, err
+		}
+
+		// Más allá del frontier: decidir si esperar o fallar rápido
+		gap := r.pos - head
+		if gap > maxBlockGap {
+			// Seek lejano (ej: MKV SeekHead/Cues al final del archivo).
+			// Retornar EOF inmediato para que mpv caiga a modo lineal sin índice,
+			// en vez de bloquear hasta que el torrent descargue hasta ahí.
+			return 0, io.EOF
+		}
+
+		// Cerca del frontier — esperar a que el torrent avance
+		time.Sleep(150 * time.Millisecond)
+	}
+}
+
+func (r *streamingReader) Seek(offset int64, whence int) (int64, error) {
+	var newPos int64
+	switch whence {
+	case io.SeekStart:
+		newPos = offset
+	case io.SeekCurrent:
+		newPos = r.pos + offset
+	case io.SeekEnd:
+		newPos = r.totalSize + offset
+	default:
+		return 0, fmt.Errorf("seek: whence inválido %d", whence)
+	}
+	if newPos < 0 {
+		return 0, fmt.Errorf("seek: posición negativa")
+	}
+	r.pos = newPos
+	return r.pos, nil
+}
 
 // handlePlayMagnet inicia el streaming de un magnet link
 func (s *Server) handlePlayMagnet(c *gin.Context) {
@@ -67,7 +145,9 @@ func (s *Server) handleStopStream(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "stopped"})
 }
 
-// handleStreamVideo sirve el archivo de video vía HTTP con soporte para Range requests
+// handleStreamVideo sirve el archivo de video vía HTTP con soporte para Range requests.
+// Usa streamingReader para bloquear en el límite de descarga en vez de servir
+// ceros del área pre-alocada, evitando freeze/corrupción en el parser de mpv.
 func (s *Server) handleStreamVideo(c *gin.Context) {
 	path := s.streamer.GetTmpPath()
 	if path == "" {
@@ -75,5 +155,25 @@ func (s *Server) handleStreamVideo(c *gin.Context) {
 		return
 	}
 
-	c.File(path)
+	f, err := os.Open(path)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot open stream file"})
+		return
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot stat stream file"})
+		return
+	}
+
+	reader := &streamingReader{
+		f:         f,
+		totalSize: info.Size(),
+		getHead:   func() int64 { return s.streamer.GetProgress().HeadWritten },
+		done:      c.Request.Context().Done(),
+	}
+
+	http.ServeContent(c.Writer, c.Request, filepath.Base(path), info.ModTime(), reader)
 }

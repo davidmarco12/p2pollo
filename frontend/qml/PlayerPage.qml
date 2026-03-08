@@ -73,6 +73,28 @@ Item {
             visible: !backend.isStreamReady
             z: 10
 
+            // Botón volver (esquina superior izquierda)
+            Rectangle {
+                id: loadingBackBtn
+                x: 16; y: 16
+                width: 100; height: 36; radius: 6
+                color: loadingBackMa.containsMouse ? "#ff8555" : "#ff6b35"
+                RowLayout {
+                    anchors.centerIn: parent
+                    spacing: 6
+                    Text { text: "←"; font.pixelSize: 16; color: "#fff" }
+                    Text { text: "Volver"; font.pixelSize: 14; color: "#fff" }
+                }
+                MouseArea {
+                    id: loadingBackMa; anchors.fill: parent
+                    hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        backend.stopStream()
+                        root.backRequested()
+                    }
+                }
+            }
+
             ColumnLayout {
                 anchors.centerIn: parent
                 spacing: 16

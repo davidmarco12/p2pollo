@@ -1,8 +1,8 @@
 package com.p2pollo.ui.player
 
-import android.graphics.SurfaceTexture
 import android.view.Surface
-import android.view.TextureView
+import android.view.SurfaceHolder
+import android.view.SurfaceView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.tv.material3.ExperimentalTvMaterial3Api
@@ -49,6 +50,8 @@ fun PlayerScreen(
     var controlsVisible by remember { mutableStateOf(true) }
     // Elemento oculto que retiene el foco cuando los controles desaparecen
     val hiddenFocusRequester = remember { FocusRequester() }
+    // Foco inicial en play/pause cuando los controles aparecen
+    val playPauseFocusRequester = remember { FocusRequester() }
 
     // Crear mpv al entrar. init() se llama en surfaceCreated DESPUÉS de attachSurface,
     // para que wid esté configurado antes de mpv_initialize().
@@ -85,8 +88,11 @@ fun PlayerScreen(
         try { hiddenFocusRequester.requestFocus() } catch (_: Exception) {}
     }
 
-    // Botón BACK del control remoto
-    BackHandler {
+    // Botón BACK: cerrar menú de subs si está abierto, si no salir del player
+    BackHandler(enabled = state.showSubMenu) {
+        viewModel.dismissSubMenu()
+    }
+    BackHandler(enabled = !state.showSubMenu) {
         viewModel.stopStream()
         onBack()
     }
@@ -94,7 +100,9 @@ fun PlayerScreen(
     // Auto-ocultar controles: devolver foco al elemento oculto
     LaunchedEffect(controlsVisible) {
         if (controlsVisible) {
-            delay(4_000)
+            // Foco en play/pause al aparecer los controles
+            try { playPauseFocusRequester.requestFocus() } catch (_: Exception) {}
+            delay(7_000)
             controlsVisible = false
             try { hiddenFocusRequester.requestFocus() } catch (_: Exception) {}
         }
@@ -142,21 +150,36 @@ fun PlayerScreen(
             )
         }
 
-        // Controles — sin AnimatedVisibility para evitar spike de GPU durante transición
-        if (controlsVisible && !state.isPreparing) {
-            PlayerControls(
-                state = state,
-                onBack = {
-                    viewModel.stopStream()
-                    onBack()
-                },
-                onPlayPause = { viewModel.togglePlayPause() },
-                onSeek = { seconds -> viewModel.seek(seconds) },
-                onVolumeChange = { v -> viewModel.setVolume(v) },
-                onCycleSubtitles = { viewModel.cycleSubtitles() },
-                modifier = Modifier.align(Alignment.BottomCenter)
+        // Menú de subtítulos — overlay flotante sobre los controles
+        if (state.showSubMenu && controlsVisible && !state.isPreparing) {
+            SubtitleMenu(
+                tracks = state.subTracks,
+                currentTrackId = state.subTrack,
+                onSelect = { id -> viewModel.selectSubtitle(id) },
+                onDismiss = { viewModel.dismissSubMenu() },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 48.dp, bottom = 120.dp)
             )
         }
+
+        // Controles — siempre en el árbol de composición para evitar el spike de layout
+        // al presionar D-pad. alpha=0 es gratis en GPU; componer desde cero no lo es.
+        PlayerControls(
+            state = state,
+            onBack = {
+                viewModel.stopStream()
+                onBack()
+            },
+            onPlayPause = { viewModel.togglePlayPause() },
+            onSeek = { seconds -> viewModel.seek(seconds) },
+            onVolumeChange = { v -> viewModel.setVolume(v) },
+            onToggleSubMenu = { viewModel.toggleSubMenu() },
+            playPauseFocusRequester = playPauseFocusRequester,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .alpha(if (controlsVisible && !state.isPreparing) 1f else 0f)
+        )
     }
 }
 
@@ -166,38 +189,32 @@ fun MpvSurface(
     modifier: Modifier = Modifier
 ) {
     // mpvReady se activa en surfaceCreated, después de attachSurface + init().
-    // Solo entonces se llama a loadfile, garantizando el orden correcto:
-    // attachSurface(wid) → init(mpv_initialize) → loadfile
+    // SurfaceView renderiza directo al hardware compositor — sin copia GPU extra
+    // (TextureView tenía overhead significativo en SoCs Amlogic).
     var mpvReady by remember { mutableStateOf(false) }
 
     AndroidView(
         factory = { ctx ->
-            TextureView(ctx).apply {
+            SurfaceView(ctx).apply {
                 isFocusable = false
                 isFocusableInTouchMode = false
-                var currentSurface: Surface? = null
-                surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-                    override fun onSurfaceTextureAvailable(st: SurfaceTexture, w: Int, h: Int) {
-                        Log.i("MpvSurface", "onSurfaceTextureAvailable ${w}x${h}")
-                        currentSurface = Surface(st)
-                        MpvLib.attachSurface(currentSurface!!)
+                holder.addCallback(object : SurfaceHolder.Callback {
+                    override fun surfaceCreated(h: SurfaceHolder) {
+                        Log.i("MpvSurface", "surfaceCreated")
+                        MpvLib.attachSurface(h.surface)
                         if (!mpvReady) {
                             MpvLib.init()
                             mpvReady = true
                         }
                     }
-                    override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) {
-                        Log.i("MpvSurface", "onSurfaceTextureSizeChanged ${w}x${h}")
+                    override fun surfaceChanged(h: SurfaceHolder, fmt: Int, w: Int, h2: Int) {
+                        Log.i("MpvSurface", "surfaceChanged ${w}x${h2}")
                     }
-                    override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
-                        Log.i("MpvSurface", "onSurfaceTextureDestroyed")
+                    override fun surfaceDestroyed(h: SurfaceHolder) {
+                        Log.i("MpvSurface", "surfaceDestroyed")
                         MpvLib.detachSurface()
-                        currentSurface?.release()
-                        currentSurface = null
-                        return true
                     }
-                    override fun onSurfaceTextureUpdated(st: SurfaceTexture) {}
-                }
+                })
             }
         },
         modifier = modifier
@@ -282,7 +299,8 @@ fun PlayerControls(
     onPlayPause: () -> Unit,
     onSeek: (Double) -> Unit,
     onVolumeChange: (Int) -> Unit,
-    onCycleSubtitles: () -> Unit,
+    onToggleSubMenu: () -> Unit,
+    playPauseFocusRequester: FocusRequester = remember { FocusRequester() },
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -334,7 +352,13 @@ fun PlayerControls(
         Spacer(Modifier.height(16.dp))
 
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                // Consumir D-pad arriba/abajo para que el foco no escape de los botones
+                .onPreviewKeyEvent { keyEvent ->
+                    keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP ||
+                    keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN
+                },
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -349,7 +373,8 @@ fun PlayerControls(
 
                 PlayerButton(
                     onClick = onPlayPause,
-                    containerColor = Color(0xFFFF6B35)
+                    containerColor = Color(0xFFFF6B35),
+                    modifier = Modifier.focusRequester(playPauseFocusRequester)
                 ) {
                     Text(if (state.isPaused) "▶" else "⏸", color = Color.White, fontSize = 20.sp)
                 }
@@ -359,8 +384,8 @@ fun PlayerControls(
                 }
 
                 PlayerButton(
-                    onClick = onCycleSubtitles,
-                    containerColor = if (state.subTrack > 0) Color(0xFFFF6B35) else Color(0xFF2A2320)
+                    onClick = onToggleSubMenu,
+                    containerColor = if (state.subTrack > 0 || state.showSubMenu) Color(0xFFFF6B35) else Color(0xFF2A2320)
                 ) {
                     Text("CC", color = Color.White)
                 }
@@ -373,6 +398,86 @@ fun PlayerControls(
                 fontSize = 12.sp
             )
         }
+    }
+}
+
+@Composable
+fun SubtitleMenu(
+    tracks: List<SubTrack>,
+    currentTrackId: Int,
+    onSelect: (Int) -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val firstFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        try { firstFocusRequester.requestFocus() } catch (_: Exception) {}
+    }
+
+    Column(
+        modifier = modifier
+            .background(Color(0xF01A1714), RoundedCornerShape(8.dp))
+            .padding(8.dp)
+            .onPreviewKeyEvent { keyEvent ->
+                // Consumir LEFT/RIGHT para que no navegue a los botones de atrás
+                val code = keyEvent.nativeKeyEvent.keyCode
+                code == android.view.KeyEvent.KEYCODE_DPAD_LEFT ||
+                code == android.view.KeyEvent.KEYCODE_DPAD_RIGHT
+            },
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            text = "Subtítulos",
+            color = Color(0xFF8A837C),
+            fontSize = 12.sp,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+        )
+
+        // Opción: sin subtítulos
+        SubMenuButton(
+            label = "Sin subtítulos",
+            selected = currentTrackId == 0,
+            onClick = { onSelect(0) },
+            modifier = if (tracks.isEmpty()) Modifier.focusRequester(firstFocusRequester) else Modifier
+        )
+
+        tracks.forEachIndexed { index, track ->
+            SubMenuButton(
+                label = track.label,
+                selected = currentTrackId == track.id,
+                onClick = { onSelect(track.id) },
+                modifier = if (index == 0) Modifier.focusRequester(firstFocusRequester) else Modifier
+            )
+        }
+    }
+}
+
+@Composable
+private fun SubMenuButton(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var focused by remember { mutableStateOf(false) }
+    val bgColor = when {
+        selected -> Color(0xFFFF6B35)
+        focused  -> Color(0xFF5A5350)
+        else     -> Color.Transparent
+    }
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(4.dp))
+            .background(bgColor)
+            .onFocusChanged { focused = it.isFocused }
+            .focusable()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Text(label, color = Color.White, fontSize = 14.sp)
     }
 }
 

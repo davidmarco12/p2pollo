@@ -153,17 +153,41 @@ Java_com_p2pollo_mpv_MpvLib_init(JNIEnv *env, jobject obj) {
     mpv_set_option_string(mpv, "ao", "audiotrack");
     mpv_set_option_string(mpv, "gpu-context", "android");
     mpv_set_option_string(mpv, "opengl-es", "yes");
+    // mediacodec (zero-copy): mpv provee la Surface directamente al decoder HEVC.
+    // mediacodec-copy falla en Amlogic con HEVC: FFmpeg no puede crear la SurfaceTexture
+    // interna → "Both surface and native_window are NULL" → cae a software decode.
+    // Con SurfaceView + file://, mpv ya tiene la surface lista antes de decode.
     mpv_set_option_string(mpv, "hwdec", "mediacodec");
+    // Reducir trabajo del Mali: bilinear + sin post-procesado
+    mpv_set_option_string(mpv, "scale", "bilinear");
+    mpv_set_option_string(mpv, "dscale", "bilinear");
+    mpv_set_option_string(mpv, "cscale", "bilinear");
+    mpv_set_option_string(mpv, "correct-downscaling", "no");
+    mpv_set_option_string(mpv, "interpolation", "no");
+    // video-sync=audio: sincroniza frames al clock de audio.
+    // desync causó audio underruns continuos en Flowbox F1 → A/V desync a los ~10s.
+    mpv_set_option_string(mpv, "video-sync", "audio");
+    // profile=fast: recomendado por mpv en logs de diagnóstico. Desactiva deband,
+    // sigmoid-upscaling y otros efectos caros. Se aplica ANTES de las opciones manuales
+    // para que bilinear/correct-downscaling/etc. tengan precedencia sobre el perfil.
+    mpv_set_option_string(mpv, "profile", "fast");
     mpv_set_option_string(mpv, "sub-ass", "yes");
     mpv_set_option_string(mpv, "sub-visibility", "yes");
-    // fontconfig no existe en Android; el font dir lo configura Kotlin en setOptionString
-    // antes de que se llame init(). sub-font-provider=none deshabilita la búsqueda de
-    // fontconfig y usa solo los fonts en sub-fonts-dir.
+    // sub-font-provider=none: evita que libass intente usar fontconfig (no existe en Android).
+    // Sin esto: "can't find selected font provider" y el font matching falla.
     mpv_set_option_string(mpv, "sub-font-provider", "none");
+    // sub-font=Roboto: SRT subtitles default to "sans-serif" family name. Sin un font provider,
+    // libass no puede resolver nombres genéricos como "sans-serif". Al especificar "Roboto"
+    // explícitamente, libass busca esa familia en sub-fonts-dir y encuentra Roboto-Regular.ttf
+    // (cuyo nombre interno ES "Roboto"). setupMpvFonts() ya copió este font al dir privado.
+    mpv_set_option_string(mpv, "sub-font", "Roboto");
     mpv_set_option_string(mpv, "keep-open", "yes");
-    // Limitar cache del demuxer: stream local no necesita mucho buffer
-    mpv_set_option_string(mpv, "demuxer-max-bytes", "10M");
-    mpv_set_option_string(mpv, "demuxer-readahead-secs", "5");
+    // Cache del demuxer ajustada para 2GB RAM (Flowbox F1):
+    // 20M adelante alcanza para absorber variaciones del torrent sin presionar memoria.
+    // 5M atrás mínimo para seek reciente. readahead en segundos como tope secundario.
+    mpv_set_option_string(mpv, "demuxer-max-bytes", "20M");
+    mpv_set_option_string(mpv, "demuxer-max-back-bytes", "5M");
+    mpv_set_option_string(mpv, "demuxer-readahead-secs", "15");
     mpv_request_log_messages(mpv, "warn");
 
     LOGI("init: llamando mpv_initialize...");

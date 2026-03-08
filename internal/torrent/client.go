@@ -54,6 +54,50 @@ func New(cfg *config.Config) (*Client, error) {
 	return NewWithOptions(cfg, false)
 }
 
+// NewForAndroid crea un cliente torrent optimizado para Android TV (Flowbox F1, 2 GB RAM).
+// Usa menos conexiones que el modo normal para reducir presión de memoria y escrituras a eMMC.
+func NewForAndroid(cfg *config.Config) (*Client, error) {
+	clientCfg := libtorrent.NewDefaultClientConfig()
+
+	clientCfg.DefaultStorage = NewFileStorage(
+		cfg.Paths.CacheDir,
+		storage.NewMapPieceCompletion(),
+	)
+
+	clientCfg.ExtendedHandshakeClientVersion = "p2pollo"
+	clientCfg.Bep20 = "-p2p001-"
+	clientCfg.HTTPUserAgent = "p2pollo/1.0"
+	clientCfg.NoUpload = false
+	clientCfg.Seed = false
+
+	// Límites reducidos respecto al modo normal (32 half-open, 200 peers, 100 conn):
+	// con 2 GB RAM y eMMC lenta, mantener 100 conexiones activas genera demasiado
+	// overhead de memoria y I/O incluso cuando el stream ya está en reproducción.
+	clientCfg.HalfOpenConnsPerTorrent = 8
+	clientCfg.TorrentPeersLowWater = 5
+	clientCfg.TorrentPeersHighWater = 30
+	clientCfg.EstablishedConnsPerTorrent = 15
+
+	clientCfg.DisableAcceptRateLimiting = false
+
+	if cfg.Client.Port > 0 {
+		clientCfg.ListenPort = cfg.Client.Port
+	}
+
+	tc, err := libtorrent.NewClient(clientCfg)
+	if err != nil {
+		return nil, fmt.Errorf("error creando cliente torrent (android): %w", err)
+	}
+
+	log := logrus.New()
+	log.SetLevel(logrus.InfoLevel)
+	if cfg.Logging.Level == "debug" {
+		log.SetLevel(logrus.DebugLevel)
+	}
+
+	return &Client{tc: tc, config: cfg, log: log}, nil
+}
+
 // NewWithOptions crea un nuevo cliente torrent con opciones personalizadas
 // lowMemory: activa modo ultra-conservador para máquinas con < 100MB RAM
 func NewWithOptions(cfg *config.Config, lowMemory bool) (*Client, error) {

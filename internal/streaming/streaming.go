@@ -45,7 +45,7 @@ type Service struct {
 // NewServiceHeadless crea un servicio de streaming sin reproductor de video.
 // Para uso en Android donde el playback lo maneja la app nativa vía mpv-android.
 func NewServiceHeadless(cfg *config.Config) (*Service, error) {
-	client, err := torrent.New(cfg)
+	client, err := torrent.NewForAndroid(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("error creando cliente torrent: %w", err)
 	}
