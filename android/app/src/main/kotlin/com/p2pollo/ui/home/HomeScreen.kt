@@ -1,29 +1,35 @@
 package com.p2pollo.ui.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.focusable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.tv.material3.*
+import androidx.compose.material3.Text
 import com.p2pollo.data.MovieCard
 import com.p2pollo.data.SeriesCard
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel = viewModel(),
@@ -67,11 +73,9 @@ fun HomeScreen(
             Text(
                 text = "p2pollo",
                 color = Color(0xFFFF6B35),
-                fontSize = 28.sp,
-                style = MaterialTheme.typography.headlineMedium
+                fontSize = 28.sp
             )
 
-            // Search
             SearchBar(
                 query = searchQuery,
                 onQueryChange = { q ->
@@ -89,27 +93,36 @@ fun HomeScreen(
             )
         }
 
-        // Tabs
-        TabRow(
-            selectedTabIndex = selectedTab,
-            modifier = Modifier.padding(bottom = 24.dp)
-        ) {
+        // Tabs — Box simple sin animaciones (TabRow de TV tiene indicador animado)
+        Row(modifier = Modifier.padding(bottom = 24.dp)) {
             tabs.forEachIndexed { index, title ->
-                Tab(
-                    selected = selectedTab == index,
-                    onFocus = {
-                        selectedTab = index
-                        scope.launch {
-                            if (index == 0) viewModel.loadPopularMovies()
-                            else viewModel.loadPopularSeries()
+                var focused by remember { mutableStateOf(false) }
+                val active = selectedTab == index
+                Box(
+                    modifier = Modifier
+                        .onFocusChanged { focused = it.isFocused }
+                        .focusable()
+                        .clickable {
+                            selectedTab = index
+                            scope.launch {
+                                if (index == 0) viewModel.loadPopularMovies()
+                                else viewModel.loadPopularSeries()
+                            }
                         }
-                    },
-                    onClick = { selectedTab = index }
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(
+                            when {
+                                active -> Color(0xFF2A1F1A)
+                                focused -> Color(0xFF1F1C1A)
+                                else -> Color.Transparent
+                            }
+                        )
+                        .padding(horizontal = 24.dp, vertical = 12.dp)
                 ) {
                     Text(
                         text = title,
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
-                        color = if (selectedTab == index) Color(0xFFFF6B35) else Color(0xFF8A837C)
+                        color = if (active) Color(0xFFFF6B35) else Color(0xFF8A837C),
+                        fontSize = 14.sp
                     )
                 }
             }
@@ -154,143 +167,142 @@ fun HomeScreen(
     }
 }
 
-@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun MovieGrid(
     movies: List<MovieCard>,
     onMovieClick: (MovieCard) -> Unit
 ) {
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 160.dp),
+        columns = GridCells.Fixed(5),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         contentPadding = PaddingValues(bottom = 32.dp)
     ) {
-        items(movies) { movie ->
+        items(movies, key = { it.title + it.year }) { movie ->
             MovieCardItem(movie = movie, onClick = { onMovieClick(movie) })
         }
     }
 }
 
-@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun SeriesGrid(
     seriesList: List<SeriesCard>,
     onSeriesClick: (SeriesCard) -> Unit
 ) {
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 160.dp),
+        columns = GridCells.Fixed(5),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         contentPadding = PaddingValues(bottom = 32.dp)
     ) {
-        items(seriesList) { s ->
+        items(seriesList, key = { it.title + it.year }) { s ->
             SeriesCardItem(series = s, onClick = { onSeriesClick(s) })
         }
     }
 }
 
-@OptIn(ExperimentalTvMaterial3Api::class)
+// Card sin animaciones de TV — Box simple con borde en focus.
+// TV Material3 Card tiene scale + shadow animation en focus, muy pesado en Mali (Amlogic S905).
+// Aquí solo cambia el color de fondo del info panel: sin layout changes, sin animaciones.
 @Composable
 fun MovieCardItem(
     movie: MovieCard,
     onClick: () -> Unit
 ) {
-    Card(
-        onClick = onClick,
+    var focused by remember { mutableStateOf(false) }
+    Column(
         modifier = Modifier
-            .width(160.dp)
+            .fillMaxWidth()
             .height(240.dp)
+            .onFocusChanged { focused = it.isFocused }
+            .focusable()
+            .clickable(onClick = onClick)
+            .clip(RoundedCornerShape(4.dp))
+            .background(if (focused) Color(0xFF2A1F1A) else Color(0xFF1A1715))
     ) {
+        coil.compose.AsyncImage(
+            model = movie.poster,
+            contentDescription = movie.title,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(180.dp),
+            contentScale = ContentScale.Crop
+        )
         Column(
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(8.dp)
         ) {
-            coil.compose.AsyncImage(
-                model = movie.poster,
-                contentDescription = movie.title,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(180.dp),
-                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+            Text(
+                text = movie.title,
+                color = if (focused) Color(0xFFFF6B35) else Color(0xFFF5F3F0),
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color(0xFF1A1715))
-                    .padding(8.dp)
-            ) {
-                Text(
-                    text = movie.title,
-                    color = Color(0xFFF5F3F0),
-                    fontSize = 12.sp,
-                    maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                )
-                Text(
-                    text = "${movie.year} • ★ ${movie.rating}",
-                    color = Color(0xFF8A837C),
-                    fontSize = 10.sp
-                )
-            }
+            Text(
+                text = "${movie.year} • ★ ${movie.rating}",
+                color = Color(0xFF8A837C),
+                fontSize = 10.sp
+            )
         }
     }
 }
 
-@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun SeriesCardItem(
     series: SeriesCard,
     onClick: () -> Unit
 ) {
-    Card(
-        onClick = onClick,
+    var focused by remember { mutableStateOf(false) }
+    Column(
         modifier = Modifier
-            .width(160.dp)
+            .fillMaxWidth()
             .height(240.dp)
+            .onFocusChanged { focused = it.isFocused }
+            .focusable()
+            .clickable(onClick = onClick)
+            .clip(RoundedCornerShape(4.dp))
+            .background(if (focused) Color(0xFF2A1F1A) else Color(0xFF1A1715))
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            coil.compose.AsyncImage(
-                model = series.poster,
-                contentDescription = series.title,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(180.dp),
-                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+        coil.compose.AsyncImage(
+            model = series.poster,
+            contentDescription = series.title,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(180.dp),
+            contentScale = ContentScale.Crop
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(8.dp)
+        ) {
+            Text(
+                text = series.title,
+                color = if (focused) Color(0xFFFF6B35) else Color(0xFFF5F3F0),
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color(0xFF1A1715))
-                    .padding(8.dp)
-            ) {
-                Text(
-                    text = series.title,
-                    color = Color(0xFFF5F3F0),
-                    fontSize = 12.sp,
-                    maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                )
-                Text(
-                    text = "${series.year} • ★ ${series.rating}",
-                    color = Color(0xFF8A837C),
-                    fontSize = 10.sp
-                )
-            }
+            Text(
+                text = "${series.year} • ★ ${series.rating}",
+                color = Color(0xFF8A837C),
+                fontSize = 10.sp
+            )
         }
     }
 }
 
-@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun SearchBar(
     query: String,
     onQueryChange: (String) -> Unit
 ) {
-    // TV-friendly search
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChange,
-        placeholder = { androidx.tv.material3.Text("Buscar...", color = Color(0xFF8A837C)) },
+        placeholder = { Text("Buscar...", color = Color(0xFF8A837C)) },
         colors = OutlinedTextFieldDefaults.colors(
             focusedBorderColor = Color(0xFFFF6B35),
             unfocusedBorderColor = Color(0xFF3A3330),

@@ -2,7 +2,6 @@ package scraper
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 	"sync"
 )
@@ -27,23 +26,6 @@ func (r *Result) HealthScore() int {
 		return 0
 	}
 	return int(float64(r.Seeds) / float64(total) * 100)
-}
-
-// SortOrder define el criterio de ordenamiento de resultados
-type SortOrder string
-
-const (
-	SortBySeeds     SortOrder = "seeds"     // Ordenar por seeds (descendente)
-	SortBySize      SortOrder = "size"      // Ordenar por tamano
-	SortByDate      SortOrder = "date"      // Ordenar por fecha de subida
-	SortByRelevance SortOrder = "relevance" // Ordenar por relevancia (seeds + leechers)
-)
-
-// Filters contiene los filtros aplicables a una busqueda
-type Filters struct {
-	MinSeeds int       // Minimo de seeds requerido
-	MaxSize  string    // Tamano maximo (ej: "5 GB") — reservado para filtrado futuro
-	SortBy   SortOrder // Criterio de ordenamiento
 }
 
 // Provider es la interfaz que debe implementar cada sitio de torrents
@@ -125,57 +107,6 @@ func (s *Scraper) Search(query string) ([]Result, error) {
 	}
 
 	return results, nil
-}
-
-// SearchWithFilters busca en todos los proveedores y aplica los filtros indicados
-func (s *Scraper) SearchWithFilters(query string, filters Filters) ([]Result, error) {
-	results, err := s.Search(query)
-	if err != nil {
-		return nil, err
-	}
-
-	// Filtrar por minimo de seeds
-	if filters.MinSeeds > 0 {
-		var filtrados []Result
-		for _, r := range results {
-			if r.Seeds >= filters.MinSeeds {
-				filtrados = append(filtrados, r)
-			}
-		}
-		results = filtrados
-	}
-
-	// Ordenar segun el criterio seleccionado
-	sortResults(results, filters.SortBy)
-
-	return results, nil
-}
-
-// sortResults ordena los resultados segun el criterio indicado
-func sortResults(results []Result, order SortOrder) {
-	switch order {
-	case SortBySeeds:
-		sort.Slice(results, func(i, j int) bool {
-			return results[i].Seeds > results[j].Seeds
-		})
-	case SortByDate:
-		sort.Slice(results, func(i, j int) bool {
-			// Comparacion lexicografica — asume formato consistente de fecha
-			return results[i].UploadDate > results[j].UploadDate
-		})
-	case SortByRelevance:
-		sort.Slice(results, func(i, j int) bool {
-			scoreI := results[i].Seeds + results[i].Leechers
-			scoreJ := results[j].Seeds + results[j].Leechers
-			return scoreI > scoreJ
-		})
-	case SortBySize:
-		// Ordenar por tamano como texto — para ordenamiento preciso
-		// se necesitaria parsear el tamano a bytes
-		sort.Slice(results, func(i, j int) bool {
-			return results[i].Size > results[j].Size
-		})
-	}
 }
 
 // subtitleTokens mapea tokens del nombre del release a su etiqueta normalizada.

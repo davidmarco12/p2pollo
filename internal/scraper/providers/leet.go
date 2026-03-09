@@ -16,18 +16,16 @@ import (
 	"p2pollo/internal/scraper"
 )
 
-// mirrors son dominios alternativos de 1337x.
-// Se prueban en orden hasta que uno responda.
-// 1337x.to tiene Cloudflare agresivo — si tls-client logra pasar, se usa.
-// 1337xx.to (doble x) es fallback sin Cloudflare pero con contenido diferente.
+// Dominios oficiales de 1337x firmados con PGP (mayo 2024).
+// Ver: https://1337x.to/status — NO agregar mirrors de terceros.
 var mirrors = []string{
 	"https://1337x.to",
 	"https://www.1337x.to",
 	"https://1337x.st",
-	"https://1337x.gd",
-	"https://1337x.so",
 	"https://x1337x.ws",
-	"https://www.1337xx.to",
+	"https://x1337x.eu",
+	"https://x1337x.se",
+	"https://x1337x.cc",
 }
 
 // Leet implementa el proveedor de búsqueda para el sitio 1337x.

@@ -336,23 +336,6 @@ func (s *Service) Close() error {
 	return nil
 }
 
-// --- Métodos legacy para compatibilidad (deprecar después) ---
-
-// StreamURL retorna una URL vacía (legacy, mpv no usa HTTP)
-func (s *Service) StreamURL() string {
-	return ""
-}
-
-// FileExt retorna la extensión del archivo (legacy)
-func (s *Service) FileExt() string {
-	return ""
-}
-
-// CanSeekNatively siempre true con mpv (legacy)
-func (s *Service) CanSeekNatively() bool {
-	return true
-}
-
 // VideoDuration obtiene duración desde mpv
 func (s *Service) VideoDuration() float64 {
 	s.mu.RLock()
@@ -370,21 +353,3 @@ func (s *Service) VideoDuration() float64 {
 	return duration
 }
 
-// GetSubtitleTracks obtiene tracks de mpv (legacy, usar GetPlayer().GetSubtitleTracks())
-func (s *Service) GetSubtitleTracks() []player.TrackInfo {
-	s.mu.RLock()
-	mpv := s.player
-	s.mu.RUnlock()
-
-	if mpv == nil || !mpv.IsRunning() {
-		return nil
-	}
-
-	tracks, err := mpv.GetSubtitleTracks()
-	if err != nil {
-		s.log.Warnf("Error obteniendo tracks de subtítulos: %v", err)
-		return nil
-	}
-
-	return tracks
-}

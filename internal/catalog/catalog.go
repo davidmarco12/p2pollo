@@ -1,7 +1,6 @@
 package catalog
 
 import (
-	"fmt"
 	"net/url"
 	"strings"
 )
@@ -77,15 +76,6 @@ func BuildMagnetLink(hash, title string, trackers []string) string {
 	return b.String()
 }
 
-// HealthScore calcula un puntaje de salud (0-100) basado en seeds/peers
-func HealthScore(seeds, peers int) int {
-	total := seeds + peers
-	if total == 0 {
-		return 0
-	}
-	return int(float64(seeds) / float64(total) * 100)
-}
-
 // DefaultTrackers son trackers comunes para construir magnet links
 var DefaultTrackers = []string{
 	"udp://open.demonii.com:1337/announce",
@@ -96,7 +86,3 @@ var DefaultTrackers = []string{
 	"udp://open.stealth.si:80/announce",
 }
 
-// FormatTracker construye la URL completa de un tracker para la query
-func FormatTracker(tracker string) string {
-	return fmt.Sprintf("&tr=%s", url.QueryEscape(tracker))
-}

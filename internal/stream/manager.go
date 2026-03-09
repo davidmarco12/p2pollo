@@ -250,30 +250,6 @@ func (m *Manager) Progress() Progress {
 	}
 }
 
-// TmpPath retorna la ruta del archivo temporal.
-func (m *Manager) TmpPath() string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.tmpPath
-}
-
-// TorrentProgress retorna los bytes completados del torrent (para monitoreo durante reproducción).
-func (m *Manager) TorrentProgress() (bytesCompleted int64, peers int) {
-	if m.t == nil {
-		return 0, 0
-	}
-	return m.t.BytesCompleted(), m.t.Peers()
-}
-
-// Sync sincroniza el archivo temporal al disco.
-func (m *Manager) Sync() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.tmpFile != nil {
-		m.tmpFile.Sync()
-	}
-}
-
 // Stop detiene la descarga y limpia recursos.
 // No elimina el archivo temporal (el caller decide si hacerlo).
 func (m *Manager) Stop() {
@@ -308,37 +284,6 @@ func (m *Manager) Cleanup() {
 	if path != "" {
 		os.Remove(path)
 	}
-}
-
-// TorrentFiles retorna la lista de archivos del torrent activo.
-func (m *Manager) TorrentFiles() []torrent.FileInfo {
-	return m.info.Files
-}
-
-// ReadFile lee el contenido completo de un archivo del torrent por su índice.
-// Bloquea hasta que las piezas del archivo estén descargadas.
-func (m *Manager) ReadFile(fileIndex int) ([]byte, error) {
-	if m.t == nil {
-		return nil, fmt.Errorf("torrent no inicializado")
-	}
-	if fileIndex < 0 || fileIndex >= len(m.info.Files) {
-		return nil, fmt.Errorf("índice de archivo inválido: %d", fileIndex)
-	}
-
-	reader, err := m.t.NewFileReader(fileIndex)
-	if err != nil {
-		return nil, fmt.Errorf("error creando reader: %w", err)
-	}
-	if closer, ok := reader.(io.Closer); ok {
-		defer closer.Close()
-	}
-
-	data, err := io.ReadAll(reader)
-	if err != nil {
-		return nil, fmt.Errorf("error leyendo archivo: %w", err)
-	}
-
-	return data, nil
 }
 
 // readerResponsive y readerReadahead permiten configurar el reader de anacrolix
