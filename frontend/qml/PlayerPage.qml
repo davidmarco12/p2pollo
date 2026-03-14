@@ -293,7 +293,11 @@ Item {
                         MouseArea {
                             id: backMa; anchors.fill: parent
                             hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                            onClicked: root.backRequested()
+                            onClicked: {
+                                mpvPlayer.stop()
+                                backend.stopStream()
+                                root.backRequested()
+                            }
                         }
                     }
 
@@ -625,7 +629,6 @@ Item {
     }
 
     Component.onDestruction: {
-        mpvPlayer.paused = true
         backend.stopStream()
     }
 

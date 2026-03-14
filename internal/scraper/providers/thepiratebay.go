@@ -98,7 +98,7 @@ func (t *ThePirateBay) Search(query string) ([]scraper.Result, error) {
 	}
 
 	// La API devuelve un único elemento con este nombre cuando no hay resultados.
-	if len(apiResults) == 1 && apiResults[0].Name == "No results returned." {
+	if len(apiResults) == 1 && strings.EqualFold(strings.TrimRight(apiResults[0].Name, "."), "No results returned") {
 		return []scraper.Result{}, nil
 	}
 

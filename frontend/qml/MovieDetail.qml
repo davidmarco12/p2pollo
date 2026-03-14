@@ -452,6 +452,16 @@ Item {
                             }
                         }
 
+                        // Sin torrents disponibles
+                        Text {
+                            visible: movieDetails && (!movieDetails.torrents || movieDetails.torrents.length === 0) && !backend.isLoading
+                            text: "No hay torrents disponibles para esta película"
+                            font.pixelSize: 14
+                            color: "#8a837c"
+                            Layout.alignment: Qt.AlignHCenter
+                            Layout.topMargin: 8
+                        }
+
                         // Loading indicator
                         BusyIndicator {
                             Layout.alignment: Qt.AlignHCenter
