@@ -82,6 +82,7 @@ func newServerFromConfig(cfg *config.Config, headless bool) (*Server, error) {
 	s := scraper.New()
 	s.RegisterProvider("rargb", providers.NewRargb())
 	s.RegisterProvider("thepiratebay", providers.NewThePirateBay(cfg.Trackers))
+	s.RegisterProvider("yts", providers.NewYTS(cfg.Trackers))
 
 	catalogProvider := yts.New(cfg.Trackers)
 	justwatchClient := justwatch.New()

@@ -56,8 +56,14 @@ MpvObject::MpvObject(QQuickItem *parent)
     // Configurar mpv
     mpv_set_option_string(m_mpv, "vo", "libmpv");
     mpv_set_option_string(m_mpv, "hwdec", "auto");
-    mpv_set_option_string(m_mpv, "terminal", "yes");
-    mpv_set_option_string(m_mpv, "msg-level", "all=v");
+
+    // Limitar read-ahead del demuxer para evitar leer zonas no descargadas
+    // (el archivo torrent está pre-alocado con ceros; sin estos límites mpv
+    // llega a esas zonas y genera "Invalid NAL unit size" / corrupted frames)
+    mpv_set_option_string(m_mpv, "cache", "yes");
+    mpv_set_option_string(m_mpv, "demuxer-max-bytes", "20M");
+    mpv_set_option_string(m_mpv, "demuxer-max-back-bytes", "5M");
+    mpv_set_option_string(m_mpv, "demuxer-readahead-secs", "15");
 
     // Inicializar mpv
     if (mpv_initialize(m_mpv) < 0) {
@@ -93,11 +99,6 @@ MpvObject::MpvObject(QQuickItem *parent)
             this, [this, checkAndCreateRenderer](QQuickWindow *win) {
                 qDebug() << "[MpvObject] Window changed, win=" << win;
                 if (win) {
-                    qDebug() << "[MpvObject] Initial size:" << width() << "x" << height();
-                    qDebug() << "[MpvObject] Connected to window's beforeRendering signal";
-                    connect(win, &QQuickWindow::beforeRendering,
-                            this, &MpvObject::doUpdate, Qt::DirectConnection);
-                    // Check if size is already valid
                     checkAndCreateRenderer();
                 }
             });

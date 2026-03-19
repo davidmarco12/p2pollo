@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"p2pollo/internal/scraper"
@@ -57,6 +59,7 @@ func NewThePirateBay(trackers []string) *ThePirateBay {
 
 // tpbAPIResult representa un elemento de la respuesta JSON de apibay.org.
 type tpbAPIResult struct {
+	ID       string `json:"id"`
 	Name     string `json:"name"`
 	InfoHash string `json:"info_hash"`
 	Leechers string `json:"leechers"`
@@ -65,6 +68,16 @@ type tpbAPIResult struct {
 	Category string `json:"category"`
 	Status   string `json:"status"`
 }
+
+// tpbDetailResult representa la respuesta de /t.php?id=<id>.
+type tpbDetailResult struct {
+	Descr string `json:"descr"`
+}
+
+var (
+	subtitleLineRe = regexp.MustCompile(`(?i)Subtitles?:\s*([^\r\n]+)`)
+	bracketRe      = regexp.MustCompile(`\[[^\]]*\]`)
+)
 
 // Search busca torrents en The Pirate Bay via la API de apibay.org.
 func (t *ThePirateBay) Search(query string) ([]scraper.Result, error) {
@@ -102,21 +115,38 @@ func (t *ThePirateBay) Search(query string) ([]scraper.Result, error) {
 		return []scraper.Result{}, nil
 	}
 
-	results := make([]scraper.Result, 0, len(apiResults))
+	// Filtrar resultados válidos preservando el orden.
+	valid := make([]tpbAPIResult, 0, len(apiResults))
 	for _, r := range apiResults {
-		if r.InfoHash == "" {
-			continue
+		if r.InfoHash != "" {
+			valid = append(valid, r)
 		}
+	}
 
+	// Enriquecer con subtítulos del endpoint de detalle en paralelo.
+	subtitles := make([][]string, len(valid))
+	sem := make(chan struct{}, 5)
+	var wg sync.WaitGroup
+	for i, r := range valid {
+		wg.Add(1)
+		go func(i int, r tpbAPIResult) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			subtitles[i] = t.fetchSubtitles(r.ID, r.Name)
+		}(i, r)
+	}
+	wg.Wait()
+
+	results := make([]scraper.Result, 0, len(valid))
+	for i, r := range valid {
 		seeds, _ := strconv.Atoi(r.Seeders)
 		leechers, _ := strconv.Atoi(r.Leechers)
-
 		sizeBytes, _ := strconv.ParseInt(r.Size, 10, 64)
 		sizeStr := ""
 		if sizeBytes > 0 {
 			sizeStr = scraper.FormatSize(sizeBytes)
 		}
-
 		results = append(results, scraper.Result{
 			Name:       r.Name,
 			MagnetLink: t.buildMagnet(r.InfoHash, r.Name),
@@ -124,11 +154,50 @@ func (t *ThePirateBay) Search(query string) ([]scraper.Result, error) {
 			Seeds:      seeds,
 			Leechers:   leechers,
 			Source:     "thepiratebay",
-			Subtitles:  scraper.ParseSubtitleLanguages(r.Name),
+			Subtitles:  subtitles[i],
 		})
 	}
 
 	return results, nil
+}
+
+// fetchSubtitles obtiene los subtítulos del endpoint de detalle de apibay.
+// Si falla, cae al parseo del nombre del release.
+func (t *ThePirateBay) fetchSubtitles(id, name string) []string {
+	if id == "" {
+		return scraper.ParseSubtitleLanguages(name)
+	}
+	detailURL := fmt.Sprintf("%s/t.php?id=%s", t.apiURL, id)
+	resp, err := t.client.Get(detailURL)
+	if err != nil {
+		return scraper.ParseSubtitleLanguages(name)
+	}
+	defer resp.Body.Close()
+
+	var detail tpbDetailResult
+	if err := json.NewDecoder(resp.Body).Decode(&detail); err != nil {
+		return scraper.ParseSubtitleLanguages(name)
+	}
+
+	subs := parseDescrSubtitles(detail.Descr)
+	if len(subs) == 0 {
+		return scraper.ParseSubtitleLanguages(name)
+	}
+	return subs
+}
+
+// parseDescrSubtitles extrae idiomas de subtítulos del campo descr de apibay.
+// Ejemplo: "Subtitles: English [Selectable]" → ["ENG"]
+func parseDescrSubtitles(descr string) []string {
+	m := subtitleLineRe.FindStringSubmatch(descr)
+	if m == nil {
+		return nil
+	}
+	// Eliminar notas entre corchetes: [Selectable], [Forced], etc.
+	line := bracketRe.ReplaceAllString(m[1], "")
+	// Reemplazar comas por espacios para que ParseSubtitleLanguages tokenice bien
+	line = strings.ReplaceAll(line, ",", " ")
+	return scraper.ParseSubtitleLanguages(line)
 }
 
 // buildMagnet construye el magnet link desde el info hash y el nombre del torrent.

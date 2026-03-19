@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -166,7 +167,7 @@ func (s *Server) handleGetEpisodeTorrents(c *gin.Context) {
 		}
 	}
 
-	if len(torrents) == 0 && title != "" {
+	if title != "" {
 		query := fmt.Sprintf("%s S%02dE%02d", title, season, episode)
 		s.log.Infof("Buscando en scrapers: %s", query)
 		results, _ := s.scraper.Search(query)
@@ -189,6 +190,11 @@ func (s *Server) handleGetEpisodeTorrents(c *gin.Context) {
 	if torrents == nil {
 		torrents = []TorrentOption{}
 	}
+
+	sort.Slice(torrents, func(i, j int) bool {
+		return torrents[i].Seeds > torrents[j].Seeds
+	})
+
 	c.JSON(http.StatusOK, torrents)
 }
 

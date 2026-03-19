@@ -11,6 +11,13 @@ Item {
     property bool controlsVisible: true
     property var cachedSubtitleTracks: []
     property var cachedAudioTracks: []
+    property bool userMovingVolume: false
+
+    Timer {
+        id: volumeMoveCooldown
+        interval: 600
+        onTriggered: root.userMovingVolume = false
+    }
 
     signal backRequested()
 
@@ -60,7 +67,7 @@ Item {
                     seekSlider.value = position
             }
             onVolumeChanged: {
-                if (!volumeSlider.pressed)
+                if (!volumeSlider.pressed && !root.userMovingVolume)
                     volumeSlider.value = volume
             }
             onDurationChanged: console.log("Duration:", duration)
@@ -422,11 +429,16 @@ Item {
                             from: 0; to: 100; value: 50
                             Layout.preferredWidth: 90
 
-                            onMoved: mpvPlayer.volume = Math.round(value)
+                            onMoved: {
+                                root.userMovingVolume = true
+                                volumeMoveCooldown.restart()
+                                mpvPlayer.volume = Math.round(value)
+                            }
 
                             background: Rectangle {
                                 x: volumeSlider.leftPadding
                                 y: volumeSlider.topPadding + volumeSlider.availableHeight / 2 - height / 2
+                                implicitHeight: 20
                                 width: volumeSlider.availableWidth
                                 height: 4; radius: 2
                                 color: "#33ffffff"

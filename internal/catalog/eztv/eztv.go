@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 )
 
-const baseURL = "https://en.eztv-official.is"
+const baseURL = "https://eztvx.to"
 
 // Client es el cliente para la API de EZTV
 type Client struct {
@@ -43,6 +44,26 @@ type eztvResponse struct {
 	ImdbID        string    `json:"imdb_id"`
 	TorrentsCount int       `json:"torrents_count"`
 	Torrents      []Torrent `json:"torrents"`
+}
+
+// sxxexxRegex extrae temporada y episodio del filename cuando los campos de la API vienen en 0.
+// Ej: "The.Terror.S01E01.720p..." → season=1, episode=1
+var sxxexxRegex = regexp.MustCompile(`(?i)[._\s-]S(\d{1,2})E(\d{1,2})[._\s-]`)
+
+// parseSE extrae temporada y episodio de un torrent.
+// Usa los campos de la API si son válidos; si no, parsea el filename.
+func parseSE(t Torrent) (season, episode int) {
+	s, _ := strconv.Atoi(t.Season)
+	e, _ := strconv.Atoi(t.Episode)
+	if s > 0 && e > 0 {
+		return s, e
+	}
+	// Fallback: parsear desde el filename
+	if m := sxxexxRegex.FindStringSubmatch(t.Filename); len(m) == 3 {
+		s, _ = strconv.Atoi(m[1])
+		e, _ = strconv.Atoi(m[2])
+	}
+	return s, e
 }
 
 // GetEpisodeTorrents retorna torrents de EZTV para un episodio específico
@@ -78,8 +99,7 @@ func (c *Client) GetEpisodeTorrents(imdbID string, season, episode int) ([]Torre
 		// Si ya encontramos episodios del season/episode buscado, parar
 		found := false
 		for _, t := range resp.Torrents {
-			s, _ := strconv.Atoi(t.Season)
-			e, _ := strconv.Atoi(t.Episode)
+			s, e := parseSE(t)
 			if s == season && e == episode {
 				found = true
 				break
@@ -94,8 +114,7 @@ func (c *Client) GetEpisodeTorrents(imdbID string, season, episode int) ([]Torre
 	// Filtrar por temporada y episodio
 	var result []Torrent
 	for _, t := range all {
-		s, _ := strconv.Atoi(t.Season)
-		e, _ := strconv.Atoi(t.Episode)
+		s, e := parseSE(t)
 		if s == season && e == episode {
 			result = append(result, t)
 		}

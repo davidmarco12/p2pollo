@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 
 	"p2pollo/internal/catalog"
@@ -129,6 +130,10 @@ func (s *Server) handleGetMovieDetails(c *gin.Context) {
 			Subtitles:  result.Subtitles,
 		})
 	}
+
+	sort.Slice(torrents, func(i, j int) bool {
+		return torrents[i].Seeds > torrents[j].Seeds
+	})
 
 	s.log.Infof("Encontrados %d torrents de %d resultados", len(torrents), len(searchResults))
 
