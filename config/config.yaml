@@ -1,0 +1,77 @@
+# Configuración de Streaming CLI
+
+# Lista de trackers
+trackers:
+  - "udp://tracker.opentrackr.org:1337/announce"
+  - "udp://open.stealth.si:80/announce"
+  - "udp://tracker.torrent.eu.org:451/announce"
+  - "udp://tracker.moeking.me:6969/announce"
+
+# Configuración del cliente
+client:
+  # Puerto para conexiones entrantes (0 = aleatorio)
+  port: 0
+  
+  # Límites de velocidad (KB/s, 0 = sin límite)
+  download_rate_limit: 0
+  upload_rate_limit: 0
+  
+  # Número máximo de conexiones simultáneas
+  max_connections: 200
+  
+  # Tiempo de espera para conexiones (segundos)
+  connection_timeout: 30
+
+# Configuración del reproductor
+player:
+  # Ruta al ejecutable de mpv (dejar vacío para usar el del PATH)
+  mpv_path: "mpv"
+  
+  # Opciones adicionales para mpv (las opciones de caché y streaming se aplican automáticamente)
+  mpv_options:
+    - "--osd-on-seek=msg"
+    - "--osd-level=2"
+
+# Configuración de streaming
+streaming:
+  # Tamaño del buffer inicial antes de comenzar reproducción (MB)
+  initial_buffer_size: 10
+  
+  # Tamaño mínimo del buffer durante reproducción (MB)
+  min_buffer_size: 5
+  
+  # Priorizar pieces para streaming secuencial
+  sequential_download: true
+  
+  # Número de pieces a priorizar adelante del punto de reproducción
+  readahead_pieces: 50
+
+# Configuración de búsqueda
+search:
+  # Límite de resultados por tracker
+  max_results_per_tracker: 20
+  
+  # Timeout para búsquedas (segundos)
+  search_timeout: 30
+
+# Configuración de paths
+paths:
+  # Directorio para caché temporal
+  cache_dir: "~/.cache/p2pollo"
+  
+  # Directorio para logs
+  log_dir: "~/.local/share/p2pollo/logs"
+  
+  # Archivo de configuración
+  config_file: "~/.config/p2pollo/config.yaml"
+
+# Configuración de logging
+logging:
+  # Nivel de log: debug, info, warn, error
+  level: "info"
+  
+  # Formato: text, json
+  format: "text"
+  
+  # Guardar logs en archivo
+  file_logging: true

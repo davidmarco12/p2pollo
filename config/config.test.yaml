@@ -1,0 +1,36 @@
+# Configuración de prueba para tests
+
+trackers:
+  - "udp://tracker.test1.com:1337/announce"
+  - "udp://tracker.test2.com:1337/announce"
+
+client:
+  port: 6881
+  download_rate_limit: 0
+  upload_rate_limit: 0
+  max_connections: 100
+  connection_timeout: 30
+
+player:
+  mpv_path: "mpv"
+  mpv_options:
+    - "--cache=yes"
+
+streaming:
+  initial_buffer_size: 5
+  min_buffer_size: 2
+  sequential_download: true
+  readahead_pieces: 25
+
+search:
+  max_results_per_tracker: 10
+  search_timeout: 15
+
+paths:
+  cache_dir: "/tmp/p2pollo-test"
+  log_dir: "/tmp/p2pollo-test/logs"
+
+logging:
+  level: "debug"
+  format: "text"
+  file_logging: false

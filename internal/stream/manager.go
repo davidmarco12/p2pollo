@@ -1,0 +1,495 @@
+package stream
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"p2pollo/internal/config"
+	"p2pollo/internal/torrent"
+	"github.com/sirupsen/logrus"
+)
+
+// Options configura el comportamiento del streaming.
+type Options struct {
+	NoBuffer  bool  // No esperar buffer completo (5MB mínimo)
+	BufferMB  int64 // Buffer objetivo en MB (default 200)
+	MoovMB    int64 // Tamaño del moov atom en MB (default 5)
+}
+
+func (o Options) bufferBytes() int64 {
+	if o.NoBuffer {
+		return 5 * 1024 * 1024
+	}
+	mb := o.BufferMB
+	if mb <= 0 {
+		mb = 200
+	}
+	return mb * 1024 * 1024
+}
+
+func (o Options) moovBytes() int64 {
+	mb := o.MoovMB
+	if mb <= 0 {
+		mb = 5
+	}
+	return mb * 1024 * 1024
+}
+
+// Progress representa el estado actual de la descarga.
+type Progress struct {
+	HeadWritten int64   // Bytes escritos secuencialmente desde el inicio
+	TotalSize   int64   // Tamaño total del archivo
+	SpeedMBps   float64 // Velocidad en MB/s
+	MoovReady   bool    // Si el moov atom ya se descargó
+	Peers       int     // Peers conectados
+	Percent     int     // Progreso 0-100
+}
+
+// Manager gestiona la descarga y preparación de un archivo torrent para reproducción.
+// Es agnóstico a la presentación: no imprime nada, solo expone estado via Progress() y channels.
+type Manager struct {
+	cfg    *config.Config
+	client *torrent.Client
+	log    *logrus.Logger
+
+	// Estado del torrent activo
+	t         *torrent.Torrent
+	info      torrent.TorrentInfo
+	fileIndex int
+	tmpPath   string
+	tmpFile   *os.File
+
+	// Progreso atómico (safe para lectura concurrente)
+	headWritten atomic.Int64
+	moovReady   atomic.Bool
+	totalSize   int64
+
+	// Sincronización
+	readyCh chan string // Se cierra cuando el archivo está listo para reproducir (envía tmpPath)
+	cancel  context.CancelFunc
+	wg      sync.WaitGroup
+
+	// Speed tracking
+	lastBytes atomic.Int64
+	lastTime  atomic.Int64 // UnixNano
+
+	mu sync.Mutex // Protege campos mutables (tmpFile, tmpPath)
+}
+
+// New crea un nuevo Manager.
+func New(cfg *config.Config, client *torrent.Client) *Manager {
+	log := logrus.New()
+	log.SetLevel(logrus.InfoLevel)
+	if cfg.Logging.Level == "debug" {
+		log.SetLevel(logrus.DebugLevel)
+	}
+	return &Manager{
+		cfg:    cfg,
+		client: client,
+		log:    log,
+	}
+}
+
+// Prepare agrega el magnet, espera metadata y auto-detecta el archivo multimedia.
+// Retorna la info del torrent y el índice del archivo seleccionado.
+func (m *Manager) Prepare(ctx context.Context, magnetURI string, fileIndex int) (torrent.TorrentInfo, int, error) {
+	t, err := m.client.AddMagnet(magnetURI)
+	if err != nil {
+		return torrent.TorrentInfo{}, 0, fmt.Errorf("agregar magnet: %w", err)
+	}
+
+	if err := t.WaitForInfo(60 * time.Second); err != nil {
+		return torrent.TorrentInfo{}, 0, fmt.Errorf("obtener metadata: %w", err)
+	}
+
+	info := t.Info()
+
+	// Auto-detectar archivo multimedia si fileIndex == -1
+	if fileIndex < 0 {
+		fileIndex = torrent.FindMediaFile(info.Files)
+	}
+
+	if fileIndex < 0 || fileIndex >= len(info.Files) {
+		return torrent.TorrentInfo{}, 0, fmt.Errorf("índice de archivo inválido: %d (total: %d)", fileIndex, len(info.Files))
+	}
+
+	m.t = t
+	m.info = info
+	m.fileIndex = fileIndex
+	m.totalSize = info.Files[fileIndex].Length
+
+	return info, fileIndex, nil
+}
+
+// Start inicia la descarga, prioriza piezas, y lanza las goroutines de escritura.
+// Retorna inmediatamente. Usar Ready() para esperar a que esté listo para reproducir.
+func (m *Manager) Start(ctx context.Context, opts Options) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.t == nil {
+		return fmt.Errorf("llamar a Prepare() antes de Start()")
+	}
+
+	ctx, m.cancel = context.WithCancel(ctx)
+
+	// Detectar si el archivo necesita moov (solo MP4/M4V).
+	// MKV, AVI, TS, etc. guardan metadata al inicio: no necesitan pre-descargar el final.
+	// Para MP4 no-faststart el moov está al final y el player no puede decodificar sin él.
+	fileExt := strings.ToLower(filepath.Ext(m.info.Files[m.fileIndex].Path))
+	needsMoov := fileExt == ".mp4" || fileExt == ".m4v"
+
+	moovSize := opts.moovBytes()
+	if moovSize > m.totalSize {
+		moovSize = m.totalSize
+	}
+
+	if needsMoov {
+		// Estrategia MP4: priorizar SOLO las piezas del moov, sin DownloadAll.
+		// Así los peers trabajan exclusivamente en esas piezas (~1-2s con buena conexión).
+		// DownloadAll se llama en downloadMoov tras completar la descarga.
+		moovPieces := int(moovSize/m.info.PieceLength) + 1
+		lastPiece := m.info.NumPieces - 1
+		firstMoovPiece := lastPiece - moovPieces
+		if firstMoovPiece < 0 {
+			firstMoovPiece = 0
+		}
+		m.t.PrioritizeSequential(firstMoovPiece, lastPiece)
+	} else {
+		// Estrategia MKV/otros: metadata al inicio → arrancar descarga completa ya,
+		// marcar moov como listo para que downloadSequential empiece de inmediato.
+		m.t.Download()
+		m.moovReady.Store(true)
+	}
+
+	// Crear archivo temporal
+	if err := m.createTempFile(); err != nil {
+		return fmt.Errorf("crear archivo temporal: %w", err)
+	}
+
+	// Pre-allocar para poder escribir moov atom al final con WriteAt
+	if err := m.tmpFile.Truncate(m.totalSize); err != nil {
+		return fmt.Errorf("pre-allocar archivo: %w", err)
+	}
+
+	// Calcular buffer mínimo
+	bufferBytes := opts.bufferBytes()
+	if bufferBytes > m.totalSize {
+		bufferBytes = m.totalSize
+	}
+
+	m.readyCh = make(chan string, 1)
+
+	// Inicializar speed tracking
+	m.lastTime.Store(time.Now().UnixNano())
+	m.lastBytes.Store(0)
+
+	// Goroutine: descargar moov atom solo para MP4 (para MKV moovReady ya está seteado)
+	if needsMoov {
+		m.wg.Add(1)
+		go m.downloadMoov(ctx, moovSize)
+	}
+
+	// Goroutine: copia secuencial desde el inicio (espera moovReady)
+	m.wg.Add(1)
+	go m.downloadSequential(ctx)
+
+	// Goroutine: monitorear y señalar cuando esté listo
+	m.wg.Add(1)
+	go m.monitor(ctx, bufferBytes)
+
+	return nil
+}
+
+// Ready retorna un channel que envía el tmpPath cuando el archivo está listo para reproducir
+// (moov descargado + buffer mínimo alcanzado).
+func (m *Manager) Ready() <-chan string {
+	return m.readyCh
+}
+
+// Progress retorna el estado actual de la descarga.
+func (m *Manager) Progress() Progress {
+	head := m.headWritten.Load()
+	now := time.Now().UnixNano()
+	lastT := m.lastTime.Load()
+	lastB := m.lastBytes.Load()
+
+	var speed float64
+	elapsed := float64(now-lastT) / float64(time.Second)
+	if elapsed > 0 {
+		speed = float64(head-lastB) / (1024 * 1024) / elapsed
+	}
+
+	pct := 0
+	if m.totalSize > 0 {
+		pct = int(float64(head) / float64(m.totalSize) * 100)
+		if pct > 100 {
+			pct = 100
+		}
+	}
+
+	peers := 0
+	if m.t != nil {
+		peers = m.t.Peers()
+	}
+
+	return Progress{
+		HeadWritten: head,
+		TotalSize:   m.totalSize,
+		SpeedMBps:   speed,
+		MoovReady:   m.moovReady.Load(),
+		Peers:       peers,
+		Percent:     pct,
+	}
+}
+
+// Stop detiene la descarga y limpia recursos.
+// No elimina el archivo temporal (el caller decide si hacerlo).
+func (m *Manager) Stop() {
+	if m.cancel != nil {
+		m.cancel()
+	}
+	m.wg.Wait()
+
+	// Drop el torrent del cliente anacrolix: libera conexiones TCP a peers,
+	// detiene toda descarga de piezas y libera memoria interna del cliente.
+	// Sin esto el torrent sigue descargando y escribiendo a eMMC en background
+	// aunque el usuario haya salido del player → iowait elevado → ANR.
+	if m.t != nil {
+		m.t.Drop()
+		m.t = nil
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.tmpFile != nil {
+		m.tmpFile.Close()
+		m.tmpFile = nil
+	}
+}
+
+// Cleanup elimina el archivo temporal.
+func (m *Manager) Cleanup() {
+	m.mu.Lock()
+	path := m.tmpPath
+	m.mu.Unlock()
+
+	if path != "" {
+		os.Remove(path)
+	}
+}
+
+// readerResponsive y readerReadahead permiten configurar el reader de anacrolix
+// sin exponer el tipo concreto en la API del package torrent.
+type readerResponsive interface{ SetResponsive() }
+type readerReadahead interface{ SetReadahead(int64) }
+
+// --- métodos internos ---
+
+func (m *Manager) createTempFile() error {
+	cacheDir := filepath.Join(m.cfg.Paths.CacheDir, "temp")
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		return fmt.Errorf("crear directorio de caché: %w", err)
+	}
+
+	fileExt := filepath.Ext(m.info.Files[m.fileIndex].Path)
+	if fileExt == "" {
+		fileExt = ".mp4"
+	}
+
+	m.tmpPath = filepath.Join(cacheDir, fmt.Sprintf("p2pollo-stream-%d%s", time.Now().Unix(), fileExt))
+	f, err := os.OpenFile(m.tmpPath, os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		return fmt.Errorf("abrir archivo temporal: %w", err)
+	}
+	m.tmpFile = f
+
+	return nil
+}
+
+func (m *Manager) newFileReader() (io.ReadSeeker, error) {
+	if len(m.info.Files) == 1 {
+		return m.t.NewReader(), nil
+	}
+	return m.t.NewFileReader(m.fileIndex)
+}
+
+// downloadMoov descarga los últimos N bytes del archivo (moov atom para MP4 no-faststart).
+func (m *Manager) downloadMoov(ctx context.Context, moovSize int64) {
+	defer m.wg.Done()
+
+	moovOffset := m.totalSize - moovSize
+
+	reader, err := m.newFileReader()
+	if err != nil {
+		m.log.Errorf("downloadMoov: error creando reader: %v", err)
+		return
+	}
+
+	// SetResponsive: el reader solicita las piezas del moov con PiecePriorityNow.
+	// El reader secuencial usa SetReadahead (PiecePriorityReadahead, menor prioridad),
+	// así el moov gana y se descarga antes que el readahead secuencial.
+	if rs, ok := reader.(readerResponsive); ok {
+		rs.SetResponsive()
+	}
+
+	// Cerrar el reader cuando el context se cancele para desbloquear Read().
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			if closer, ok := reader.(io.Closer); ok {
+				closer.Close()
+			}
+		case <-done:
+		}
+	}()
+
+	if _, err := reader.Seek(moovOffset, io.SeekStart); err != nil {
+		m.log.Errorf("downloadMoov: error en Seek(%d de %d): %v", moovOffset, m.totalSize, err)
+		return
+	}
+
+	m.log.Infof("downloadMoov: descargando %d MB desde offset %d", moovSize/(1024*1024), moovOffset)
+
+	buf := make([]byte, 64*1024)
+	written := int64(0)
+	for written < moovSize {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		n, readErr := reader.Read(buf)
+		if n > 0 {
+			m.mu.Lock()
+			if m.tmpFile != nil {
+				m.tmpFile.WriteAt(buf[:n], moovOffset+written)
+			}
+			m.mu.Unlock()
+			written += int64(n)
+		}
+		if readErr != nil {
+			if ctx.Err() == nil {
+				m.log.Debugf("downloadMoov: read error tras %d bytes: %v", written, readErr)
+			}
+			break
+		}
+	}
+
+	// Solo marcar como listo si realmente se descargó una parte significativa.
+	// Si el reader falló inmediatamente (ej: "torrent data downloading disabled"),
+	// written será 0 y no debemos marcar moov como listo.
+	if written >= moovSize*9/10 {
+		m.log.Infof("downloadMoov: listo (%d bytes escritos)", written)
+		m.moovReady.Store(true)
+		// Habilitar descarga completa del torrent ahora que el moov está listo.
+		// Hasta este punto solo las piezas del moov estaban marcadas como wanted
+		// (PiecePriorityNow), así todos los peers trabajaron exclusivamente en ellas.
+		m.t.Download()
+	} else {
+		m.log.Warnf("downloadMoov: incompleto — solo %d de %d bytes escritos", written, moovSize)
+		// Habilitar descarga completa igual para no bloquear el streaming indefinidamente.
+		m.t.Download()
+	}
+}
+
+// downloadSequential copia el torrent secuencialmente al archivo temporal desde el inicio.
+func (m *Manager) downloadSequential(ctx context.Context) {
+	defer m.wg.Done()
+
+	// Esperar a que el moov esté listo antes de empezar la descarga secuencial.
+	// Mientras el moov no esté, no queremos un Read() bloqueado compitiendo con él:
+	// cualquier Read() bloqueado genera PiecePriorityNow en su pieza actual,
+	// igualando la prioridad del moov e impidiendo que baje primero.
+	for !m.moovReady.Load() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+
+	reader, err := m.newFileReader()
+	if err != nil {
+		return
+	}
+
+	// SetReadahead prefetcha 8 MB adelante con PiecePriorityReadahead.
+	// 32 MB era demasiado para dispositivos con 2 GB RAM (Flowbox F1):
+	// consumía memoria del torrent client + presión en eMMC innecesariamente.
+	if ra, ok := reader.(readerReadahead); ok {
+		ra.SetReadahead(8 * 1024 * 1024)
+	}
+
+	buf := make([]byte, 64*1024)
+	for {
+		select {
+		case <-ctx.Done():
+			m.syncFile()
+			return
+		default:
+		}
+
+		n, readErr := reader.Read(buf)
+		if n > 0 {
+			offset := m.headWritten.Load()
+			m.mu.Lock()
+			if m.tmpFile != nil {
+				m.tmpFile.WriteAt(buf[:n], offset)
+			}
+			m.mu.Unlock()
+			m.headWritten.Add(int64(n))
+		}
+		if readErr != nil {
+			m.syncFile()
+			return
+		}
+	}
+}
+
+// monitor espera hasta que el moov atom esté listo y el buffer mínimo se haya alcanzado.
+func (m *Manager) monitor(ctx context.Context, bufferBytes int64) {
+	defer m.wg.Done()
+
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// Actualizar speed tracking
+			m.lastBytes.Store(m.headWritten.Load())
+			m.lastTime.Store(time.Now().UnixNano())
+
+			// Listo cuando moov atom + buffer inicial estén descargados (mpv puede streaming)
+			if m.moovReady.Load() && m.headWritten.Load() >= bufferBytes {
+				m.syncFile()
+				select {
+				case m.readyCh <- m.tmpPath:
+				default:
+				}
+				return
+			}
+		}
+	}
+}
+
+func (m *Manager) syncFile() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.tmpFile != nil {
+		m.tmpFile.Sync()
+	}
+}
